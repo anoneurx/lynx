@@ -1,0 +1,60 @@
+# LYNX — see docs/privacy/legal.md for the licence rationale.
+#
+# Source is AGPL-3.0-or-later: anyone who runs a modified LYNX as a network
+# service must publish their modifications. Commercial licensing is available
+# from Anoneurx.
+#
+# LYNX is not affiliated with the Lynx web browser project (lynx-browser.org).
+# No source, asset, or trademark of that project is used here.
+
+/target
+**/target
+**/node_modules
+.pnpm-store
+.pnpm-debug.log*
+
+# build output
+/dist
+/build
+/out
+/.next
+/.astro
+coverage/
+*.tsbuildinfo
+
+# index and crawl artifacts — never commit a crawl snapshot or index
+/data
+*.index
+*.snap
+/temp
+/tmp
+
+# environment & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+!**/testdata/*.pem
+/infra-state
+*.tfstate
+*.tfstate.*
+
+# crawl run dumps may contain third-party content — never commit
+/crawl-dumps
+/crawl-dumps/**
+/logs
+/logs/**
+
+# editors & OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+.DS_Store
+Thumbs.db
+
+# local databases
+postgres-data/
+redis-data/

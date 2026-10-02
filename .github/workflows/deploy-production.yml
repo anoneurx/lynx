@@ -1,0 +1,96 @@
+name: Deploy production
+
+# Production deploys are manual, approved, and reversible. The previous index
+# generation and the previous release both remain available for rollback.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      index_generation:
+        description: "Index generation to activate (blank = keep current)"
+        required: false
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Preflight
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Quality report present
+        run: test -f research/reports/latest.md
+      - name: Performance budget met on this revision
+        run: scripts/check-perf-budget.sh "${{ github.sha }}"
+      - name: Migrations are expand-only
+        run: scripts/db-migrate.sh verify-expand-only
+
+  deploy:
+    name: Deploy
+    needs: preflight
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/k8s-set-context@v4
+        with:
+          require-token: true
+      - name: Record current state for rollback
+        run: scripts/record-rollback-state.sh > rollback-state.json
+      - name: Helm deploy
+        run: |
+          helm upgrade --install lynx \
+            infrastructure/kubernetes/charts/lynx \
+            --values infrastructure/kubernetes/overlays/production/values.yaml \
+            --atomic --timeout 20m
+
+  index-switch:
+    name: Index generation switch
+    needs: deploy
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Activate index generation
+        run: |
+          GEN="${{ inputs.index_generation }}"
+          if [ -n "$GEN" ]; then
+            scripts/switch-index-generation.sh "$GEN"
+          else
+            echo "no index switch requested"
+          fi
+      - name: Verify search correctness
+        run: scripts/verify-index.sh
+
+  smoke:
+    name: Smoke and gate
+    needs: [deploy, index-switch]
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Smoke tests
+        run: scripts/smoke.sh https://lynx.example
+      - name: Privacy spot check
+        run: scripts/check-privacy-production.sh
+      - name: Confirm new index generation serving
+        run: scripts/confirm-generation.sh
+
+  rollback:
+    name: Roll back
+    if: failure() && needs.deploy.result != 'skipped'
+    needs: [deploy, index-switch]
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Roll back release and index generation
+        run: scripts/rollback.sh rollback-state.json
+      - name: Notify
+        run: scripts/notify.sh "Production rollback completed" critical

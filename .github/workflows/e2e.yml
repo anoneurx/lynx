@@ -1,0 +1,60 @@
+name: End-to-end
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  playwright:
+    name: Browser E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.11
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Start the local stack
+        run: |
+          cp .env.example .env
+          docker compose -f infrastructure/docker/docker-compose.yml up -d lynx-db lynx-cache
+          scripts/db-migrate.sh
+          scripts/db-seed.sh
+          scripts/index-build.sh
+
+      - name: Install browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run E2E
+        run: pnpm test:e2e
+
+      - name: Collect traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: test-results/
+          retention-days: 7
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f infrastructure/docker/docker-compose.yml down -v

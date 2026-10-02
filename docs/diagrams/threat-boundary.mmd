@@ -1,0 +1,145 @@
+%% Threat Boundary Diagram
+%% LYNX Search Engine - Trust Zones, Data Classification, Attack Surface
+%% Render: mmdc -i threat-boundary.mmd -o threat-boundary.svg
+
+flowchart TB
+    subgraph INTERNET[🌐 Internet / Untrusted]
+        USER[End Users\nSearch Queries]
+        BOTS[Partner Bots\nAPI Keys]
+        CRAWL_TARGETS[Crawl Targets\nExternal Websites]
+        ATTACKER[🔴 Attacker]
+    end
+
+    subgraph DMZ[🟡 DMZ / Public Ingress]
+        WAF[WAF / Rate Limit\nCloud Armor / ModSecurity]
+        LB[Load Balancer\nTLS Termination]
+        DNS[External DNS\napi.lynx.example.com]
+    end
+
+    subgraph SEARCH_ZONE[🔵 Search Zone\n(Read-Only, Stateless)]
+        API[lynx-api Pods\nHPA 3-50]
+        READER[Tantivy Readers\nMemory-mapped Segments]
+        CACHE[Redis Cluster\nQuery Cache]
+    end
+
+    subgraph CRAWL_ZONE[🟢 Crawl Zone\n(Write, Untrusted Input)]
+        CRAWL[lynx-crawler Workers\nSpot Instances]
+        FETCH[HTTP Client\nNo Follow Redirects]
+        PARSE[HTML Parser\nSandboxed]
+        QUEUE[Redis Streams\nCrawl Queue]
+        POLITE[Politeness Tokens\nPer-Domain]
+        S3_RAW[S3 / MinIO\nRaw HTML + WARC\nEncrypted at Rest]
+    end
+
+    subgraph INDEX_ZONE[🟠 Index Zone\n(Batch, Trusted)]
+        INDEXER[lynx-indexer\nSingle Leader]
+        BUILDER[Tantivy IndexWriter]
+        SEG_STORE[ReadOnlyMany Volume\nTantivy Segments]
+        PG_IDX[Postgres\nIndex Metadata]
+    end
+
+    subgraph DATA_ZONE[🔴 Data Zone\n(Crown Jewels)]
+        PG[Postgres Cluster\nPatroni 3-Node\nOperational Data]
+        REDIS_COORD[Redis Cluster\nCoordination + Cache]
+        VAULT[HashiCorp Vault\nSecrets + PKI]
+        BACKUPS[S3 Backups\nWAL-G + Index Snapshots\nCross-Region Replication]
+    end
+
+    subgraph OPS_ZONE[🟣 Operations Zone]
+        PROM[Prometheus\nMetrics Only]
+        LOKI[Loki\nLogs (No PII)]
+        JAEGER[Jaeger\nTraces (No Query Text)]
+        GRAFANA[Grafana\nDashboards]
+        CI[CI/CD\nGitHub Actions\nOIDC Tokens]
+    end
+
+    %% Trust Boundaries
+    classDef untrusted fill:#ffebee,stroke:#c62828,stroke-width:3px;
+    classDef dmz fill:#fff3e0,stroke:#ef6c00,stroke-width:2px;
+    classDef search fill:#e3f2fd,stroke:#1565c0,stroke-width:2px;
+    classDef crawl fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
+    classDef index fill:#fff3e0,stroke:#ef6c00,stroke-width:2px;
+    classDef data fill:#fce4ec,stroke:#c2185b,stroke-width:3px;
+    classDef ops fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
+
+    class USER,BOTS,CRAWL_TARGETS,ATTACKER untrusted;
+    class WAF,LB,DNS dmz;
+    class API,READER,CACHE search;
+    class CRAWL,FETCH,PARSE,QUEUE,POLITE,S3_RAW crawl;
+    class INDEXER,BUILDER,SEG_STORE,PG_IDX index;
+    class PG,REDIS_COORD,VAULT,BACKUPS data;
+    class PROM,LOKI,JAEGER,GRAFANA,CI ops;
+
+    %% Data Flows with Classification
+    USER -->|Queries (Public)\nNo PII| WAF
+    BOTS -->|API Key Auth\nQueries| WAF
+    WAF -->|Allowed| LB
+    LB -->|TLS 1.3\nForwarded| API
+
+    API -->|Search Request\n(Query Hash Only)| READER
+    READER -->|Segments (Public Index)| SEG_STORE
+    API -.->|Cache (Results JSON)| CACHE
+    CACHE -.->|Cache (Results JSON)| API
+
+    %% Crawl Zone - Untrusted Input Handling
+    QUEUE -->|URLs (Internal)| CRAWL
+    CRAWL -->|HTTP Request\nNo Credentials| CRAWL_TARGETS
+    CRAWL_TARGETS -->|HTML Response\nUNTRUSTED| FETCH
+    FETCH -->|Raw HTML| PARSE
+    PARSE -->|Text + Links\nSANITIZED| CRAWL
+    CRAWL -->|Raw HTML\nEncrypted| S3_RAW
+    CRAWL -->|Metadata\nTitle, Hash| PG
+    CRAWL -.->|Politeness Check| POLITE
+
+    %% Index Zone
+    PG_IDX -->|Pages to Index| INDEXER
+    INDEXER -->|Fetch Content| S3_RAW
+    BUILDER -->|Segments| SEG_STORE
+    INDEXER -->|Metadata| PG_IDX
+
+    %% Data Zone Access
+    API -->|Read-Only\nConnection Pool| PG
+    CRAWL -->|Write\nConnection Pool| PG
+    INDEXER -->|Read/Write\nConnection Pool| PG
+    API -.->|Coordination| REDIS_COORD
+    CRAWL -.->|Coordination| REDIS_COORD
+    INDEXER -.->|Coordination| REDIS_COORD
+
+    %% Secrets
+    API -.->|DB Creds, TLS Certs| VAULT
+    CRAWL -.->|S3 Creds| VAULT
+    INDEXER -.->|DB Creds| VAULT
+
+    %% Backups
+    PG -.->|WAL-G Stream| BACKUPS
+    SEG_STORE -.->|Rsync Snapshots| BACKUPS
+    VAULT -.->|Raft Snapshots| BACKUPS
+
+    %% Observability (No Sensitive Data)
+    API -->|Metrics\nCounters, Histograms| PROM
+    API -->|Logs\nNo Query Text| LOKI
+    API -.->|Traces\nNo Query Text| JAEGER
+    CRAWL -->|Metrics| PROM
+    INDEXER -->|Metrics| PROM
+    PG -->|Metrics| PROM
+
+    %% CI/CD
+    CI -.->|Deploy\nOIDC Short-lived| API
+    CI -.->|Deploy| CRAWL
+    CI -.->|Deploy| INDEXER
+
+    %% Attacker Vectors (Mitigated)
+    ATTACKER -.->|DDoS| WAF
+    ATTACKER -.->|SQLi in Query| API
+    ATTACKER -.->|XSS in HTML| PARSE
+    ATTACKER -.->|SSRF via Crawl| FETCH
+    ATTACKER -.->|Secret Leak| VAULT
+    ATTACKER -.->|Backup Theft| BACKUPS
+
+    %% Mitigation Annotations
+    click WAF "https://github.com/lynx/lynx/blob/main/docs/security/RB-01.md" "Runbook: DDoS"
+    click API "https://github.com/lynx/lynx/blob/main/docs/security/RB-02.md" "Runbook: Injection"
+    click PARSE "https://github.com/lynx/lynx/blob/main/docs/security/RB-03.md" "Runbook: Parser Hardening"
+    click FETCH "https://github.com/lynx/lynx/blob/main/docs/security/RB-04.md" "Runbook: SSRF Prevention"
+    click VAULT "https://github.com/lynx/lynx/blob/main/docs/security/RB-07.md" "Runbook: Key Compromise"
+    click BACKUPS "https://github.com/lynx/lynx/blob/main/docs/security/RB-08.md" "Runbook: Backup Integrity"

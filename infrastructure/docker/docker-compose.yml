@@ -1,0 +1,173 @@
+# LYNX — local development stack.
+#
+# Mirrors the production topology closely enough to be useful, small enough to run
+# on a laptop. Services are the same images built from infrastructure/docker/.
+#
+#   make up        start
+#   make down      stop
+#   make logs      tail
+#
+# No production data. No secrets. See DEVELOPMENT.md.
+
+name: lynx
+
+services:
+  lynx-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: lynx
+      POSTGRES_PASSWORD: lynx_dev_only
+      POSTGRES_DB: lynx
+    command:
+      - postgres
+      - -c
+      - log_statement=none          # statement logging is off so dev logs stay readable
+      - -c
+      - log_min_duration_statement=1000
+    ports: ["5432:5432"]
+    volumes: ["lynx-db-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lynx -d lynx"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  lynx-cache:
+    image: redis:7-alpine
+    # Persistence is deliberately OFF: rate-limit counters must not outlive a restart
+    # as durable records, and cached results are reconstructible.
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  lynx-api:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.api
+      target: dev
+    env_file: [".env"]
+    environment:
+      LYNX_DATABASE_URL: postgres://lynx:lynx_dev_only@lynx-db:5432/lynx
+      LYNX_REDIS_URL: redis://lynx-cache:6379/0
+      LYNX_INDEX_DIR: /var/lib/lynx/index
+      LYNX_RANKING_CONFIG: config/development.toml
+    ports: ["8080:8080", "9090:9090"]
+    volumes:
+      - ./config:/app/config:ro
+      - lynx-index:/var/lib/lynx/index
+    depends_on:
+      lynx-db: {condition: service_healthy}
+      lynx-cache: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "/app/lynx", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  lynx-crawler:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.crawler
+      target: dev
+    env_file: [".env"]
+    environment:
+      LYNX_DATABASE_URL: postgres://lynx:lynx_dev_only@lynx-db:5432/lynx
+      LYNX_CRAWLER_SEEDS: config/seeds/development.toml
+      LYNX_CRAWLER_CONCURRENCY: "4"
+    volumes:
+      - ./config:/app/config:ro
+    # Dev only: the crawler is given access to the fixture origin server on this
+    # network. In production the crawl plane has no inbound access at all.
+    networks: [lynx, fixtures]
+    depends_on:
+      lynx-db: {condition: service_healthy}
+
+  lynx-indexer:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.indexer
+      target: dev
+    env_file: [".env"]
+    environment:
+      LYNX_DATABASE_URL: postgres://lynx:lynx_dev_only@lynx-db:5432/lynx
+      LYNX_INDEX_DIR: /var/lib/lynx/index
+    volumes:
+      - ./config:/app/config:ro
+      - lynx-index:/var/lib/lynx/index
+    depends_on:
+      lynx-db: {condition: service_healthy}
+      lynx-api: {condition: service_started}
+
+  lynx-web:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.web
+      target: dev
+    environment:
+      VITE_API_BASE: http://localhost:8080
+    ports: ["3000:3000"]
+    volumes:
+      - ./apps/web:/app:ro
+    depends_on: [lynx-api]
+
+  lynx-admin:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.admin
+      target: dev
+    environment:
+      VITE_API_BASE: http://localhost:8080
+    ports: ["9091:9091"]     # local admin; production is VPN + SSO only
+    volumes:
+      - ./apps/admin:/app:ro
+    depends_on: [lynx-api]
+
+  lynx-monitoring:
+    image: prom/prometheus:v2.55.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.enable-lifecycle
+    volumes:
+      - ../infrastructure/monitoring/prometheus:/etc/prometheus:ro
+    ports: ["9095:9090"]
+    depends_on: [lynx-api]
+
+  lynx-grafana:
+    image: grafana/grafana:11.3.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: dev-insecure-change-me
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ../infrastructure/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ["9096:3000"]
+    depends_on: [lynx-monitoring]
+
+  # Adversarial origin server used by tests/crawler. Local only; never in production.
+  lynx-fixture-origin:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.fixture
+    networks: [fixtures]
+    ports: ["8081:8081"]
+
+networks:
+  lynx: {}
+  fixtures:
+    internal: true
+
+volumes:
+  lynx-db-data: {}
+  lynx-index: {}

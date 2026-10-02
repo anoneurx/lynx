@@ -1,0 +1,170 @@
+# `config/production.toml`
+#
+# Production defaults. Every value here is a considered decision, not a guess;
+# the rationale is in docs/operations/capacity.md and docs/ranking/overview.md.
+#
+# The production validator additionally REFUSES to start when:
+#   - any secret key holds a literal value instead of a secret_ref
+#   - privacy.query_logging is true
+#   - TLS is below security.tls_min_version, or admin_require_vpn is false
+#   - ai.enabled is true without a pinned model id
+#   - [api].cors_origins contains "*" or any non-first-party origin
+#   - admin.enable_basic_auth is true
+#
+# Secrets are resolved from the secret manager at runtime. See docs/security/secrets.md.
+
+[core]
+environment = "production"
+log_level   = "info"
+log_format  = "json"
+
+[api]
+bind                = "0.0.0.0:8080"
+public_url          = "https://lynx.example"           # first-party origin only
+cors_origins        = ["https://lynx.example"]
+trusted_proxy_depth = 1            # exactly one known LB in front; 2 only if a CDN is added
+max_query_bytes     = 512
+max_results_per_page = 50
+default_results     = 10
+max_candidates      = 2000
+request_timeout_ms  = 3000
+
+[api.pagination]
+mode      = "cursor"
+max_limit = 50
+
+[database]
+max_connections      = 50
+min_connections      = 10
+statement_timeout_ms = 30000
+acquire_timeout_ms   = 3000
+
+[cache.query]
+enabled     = true
+ttl_seconds = 120
+max_entries = 500000
+# Invalidation is by index generation: the generation is part of the key, so a new
+# index invalidates every cached response atomically.
+
+[cache.index]
+enabled     = true
+ttl_seconds = 600
+
+[index]
+dir                = "/var/lib/lynx/index"     # PVC per shard
+shards             = 4                        # scale out before scaling up; see ADR-0002
+memory_budget_mb   = 4096
+commit_interval_seconds = 30
+commit_docs_threshold  = 20000
+num_search_threads     = 8
+merge_policy_segments  = 8
+
+[ranking]
+config_version = "v0.1.0"     # bumped on any weight change
+candidates     = 2000
+snippet_max_chars = 240
+
+[ranking.signals]
+bm25         = 1.00
+freshness    = 0.18
+quality      = 0.12
+authority    = 0.15
+context      = 0.10
+spam_penalty = 0.40
+
+[crawler]
+user_agent       = "LynxBot/0.1 (+https://anoneurx.com/lynx/bot)"
+user_agent_group = "LynxBot"
+concurrency      = 64
+allowed_schemes  = ["http", "https"]
+allowed_ports    = [80, 443]
+max_redirects    = 5
+max_depth        = 20
+max_response_bytes = 5242880                 # 5 MiB
+max_decompression_ratio = 100
+connect_timeout_ms   = 5000
+header_timeout_ms    = 5000
+read_idle_timeout_ms = 5000
+total_timeout_ms     = 15000
+respect_robots       = true
+cache_robots         = true
+
+[crawler.budget]
+max_pages_per_host_day   = 5000
+max_bytes_per_host_day   = 5368709120
+min_inter_request_ms    = 1000
+max_concurrent_per_host  = 2
+
+[privacy]
+query_logging        = false
+metrics_query_shapes = true
+response_cache       = true
+third_party_assets   = "forbidden"
+
+[privacy.rate_limit]
+enabled              = true
+prefix_bits_v4        = 24
+prefix_bits_v6        = 48
+salt_ttl_hours        = 24
+anonymous_per_minute  = 30
+developer_per_minute  = 300
+
+[security]
+tls_min_version   = "1.3"
+allowed_ciphers   = ["TLS_AES_256_GCM_SHA384", "TLS_CHACHA20_POLY1305_SHA256"]
+hsts_max_age      = 63072000
+admin_require_vpn = true
+api_key_prefix    = "lnx_"
+
+[ai]
+enabled            = false     # ships off; enabling is a deployment decision, not a default
+provider           = "none"
+model              = ""
+require_citations  = true
+fail_closed        = true
+max_source_tokens  = 6000
+max_sources        = 10
+answer_cache_ttl   = 600
+daily_token_budget = 2000000
+
+[observability]
+metrics_bind         = "0.0.0.0:9090"
+metrics_path         = "/metrics"
+tracing              = true
+tracing_endpoint     = ""          # from env
+tracing_sample_ratio = 0.01
+log_retention_days   = 14
+
+[admin]
+enable_basic_auth = false
+bind              = "127.0.0.1:9091"
+
+# ── Deployments ────────────────────────────────────────────────────────────────
+# Reference settings for the deployment stages in DEPLOYMENT.md. Not exhaustive.
+
+[deploy.small]
+description  = "Single host: API, crawler, index, DB, cache all co-located"
+api_replicas  = 1
+crawler_workers = 2
+index_shards  = 1
+db            = "managed, 2 vCPU / 8 GB"
+index_memory_mb = 2048
+targets_index_documents = 2_000_000
+
+[deploy.medium]
+description  = "Split planes; Postgres and cache managed; index on separate nodes"
+api_replicas  = 2
+crawler_workers = 8
+index_shards  = 2
+db            = "managed, 4 vCPU / 16 GB"
+index_memory_mb = 4096
+targets_index_documents = 50_000_000
+
+[deploy.large]
+description  = "Distributed: LB → API cluster → sharded search cluster → distributed index"
+api_replicas  = 8
+crawler_workers = 64
+index_shards  = 16
+db            = "managed, HA, 8 vCPU / 64 GB + read replicas"
+index_memory_mb = 8192
+targets_index_documents = 5_000_000_000

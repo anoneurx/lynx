@@ -1,0 +1,59 @@
+name: Supply chain
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly dependency advisory refresh.
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  rust-advisories:
+    name: cargo-deny and cargo-audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: licence, advisory, and ban checks
+        run: |
+          cargo deny --locked check advisories bans licenses sources
+      - name: vulnerability audit
+        run: cargo audit --deny warnings
+
+  npm-advisories:
+    name: npm audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.11
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm audit --audit-level high
+
+  filesystem-scan:
+    name: Trivy filesystem and secret scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: misconfiguration and vulnerability scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+      - name: secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

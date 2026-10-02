@@ -1,0 +1,142 @@
+%% Deployment Diagram
+%% LYNX Search Engine - Kubernetes Topology, Networking, Storage
+%% Render: mmdc -i deployment.mmd -o deployment.svg
+
+flowchart TB
+    subgraph CLOUD[AWS / GCP / On-Prem]
+        subgraph VPC[VPC 10.0.0.0/16]
+            subgraph PUBLIC[Public Subnets\n10.0.0.0/24, 10.0.1.0/24]
+                NLB[Network LB\nTLS Passthrough\nPreserve Client IP]
+                BASTION[Bastion Host\nSSM Only]
+            end
+
+            subgraph PRIVATE_APP[Private App Subnets\n10.0.10.0/24, 10.0.11.0/24]
+                subgraph SEARCH_NS[namespace: lynx-search]
+                    API_DEP[Deployment: lynx-api\nReplicas: 3-50 (HPA)\nPod: 2 CPU, 4 GiB]
+                    API_SVC[Service: lynx-api\nClusterIP\nPort 8080]
+                    API_PDB[PodDisruptionBudget\nminAvailable: 80%]
+                end
+            end
+
+            subgraph PRIVATE_DATA[Private Data Subnets\n10.0.20.0/24, 10.0.21.0/24]
+                subgraph CRAWL_NS[namespace: lynx-crawl]
+                    CRAWL_DEP[Deployment: lynx-crawler\nReplicas: 5-200 (HPA)\nPod: 4 CPU, 8 GiB\nSpot Tolerations]
+                    CRAWL_SVC[Service: lynx-crawler\nHeadless]
+                end
+
+                subgraph INDEX_NS[namespace: lynx-index]
+                    INDEX_STS[StatefulSet: lynx-indexer\nReplicas: 1 (Leader)\nPod: 8 CPU, 32 GiB]
+                    INDEX_SVC[Service: lynx-indexer\nClusterIP]
+                end
+
+                subgraph DATA_NS[namespace: lynx-data]
+                    PG_STS[StatefulSet: lynx-postgres\nPatroni 3 Replicas\nPod: 8 CPU, 32 GiB\nPVC: 500 GiB - 6 TiB]
+                    PG_SVC_RW[Service: lynx-postgres-rw\nClusterIP → Primary]
+                    PG_SVC_RO[Service: lynx-postgres-ro\nClusterIP → Replicas]
+                    REDIS_STS[StatefulSet: lynx-redis\nCluster 6 Shards × 1 Replica\nPod: 4 CPU, 16 GiB]
+                    REDIS_SVC[Service: lynx-redis\nClusterIP]
+                end
+            end
+
+            subgraph STORAGE[Storage]
+                EFS[EFS / NFS\nReadOnlyMany\nTantivy Index Segments\nMount: /var/lib/lynx/index]
+                PVC_API[PVC: lynx-api-index\nAccessMode: ReadOnlyMany]
+                PVC_INDEXER[PVC: lynx-indexer-index\nAccessMode: ReadWriteOnce]
+                PV_POSTGRES[PV: lynx-postgres-data\nStorageClass: gp3/io1\nVolumeBindingMode: WaitForFirstConsumer]
+                PV_REDIS[PV: lynx-redis-data\nStorageClass: gp3]
+            end
+        end
+
+        subgraph MANAGED[Managed Services]
+            S3[S3 Bucket\nlynx-backups-prod\nVersioned, Encrypted\nWAL-G + Index Snapshots]
+            VAULT[HCP Vault / Self-Hosted\nHA Raft 3+ Nodes]
+            CERT_MGR[cert-manager\nLet's Encrypt + Vault PKI]
+            EXT_SECRETS[ExternalSecrets Operator\nVault → K8s Secrets]
+        end
+
+        subgraph OBS[Observability Stack]
+            PROM_STS[StatefulSet: prometheus\n2 Replicas (HA)\nPVC: 200 GiB]
+            LOKI_STS[StatefulSet: loki\n3 Replicas\nPVC: 100 GiB]
+            JAEGER_D[Deployment: jaeger\nAll-in-One]
+            GRAFANA_D[Deployment: grafana\nReplicas: 2]
+        end
+    end
+
+    subgraph EXTERNAL[External]
+        USERS[Users\napi.lynx.example.com]
+        GHA[GitHub Actions\nOIDC → IRSA]
+    end
+
+    %% Connections
+    USERS -->|HTTPS 443| NLB
+    NLB -->|TCP 8080| API_SVC
+    API_SVC -->|Load Balance| API_DEP
+
+    API_DEP -->|ReadOnlyMany| PVC_API
+    PVC_API -->|Mount| EFS
+    INDEX_STS -->|ReadWriteOnce| PVC_INDEXER
+    PVC_INDEXER -->|Mount| EFS
+
+    PG_STS -->|Primary| PG_SVC_RW
+    PG_STS -->|Replicas| PG_SVC_RO
+    PG_STS -->|Data| PV_POSTGRES
+
+    REDIS_STS -->|Cluster| REDIS_SVC
+    REDIS_STS -->|Data| PV_REDIS
+
+    CRAWL_DEP -->|DB Write| PG_SVC_RW
+    CRAWL_DEP -->|Coordination| REDIS_SVC
+    CRAWL_DEP -->|S3 Write| S3
+
+    INDEX_STS -->|DB Read/Write| PG_SVC_RW
+    INDEX_STS -->|S3 Read| S3
+    INDEX_STS -->|Segments Write| PVC_INDEXER
+
+    API_DEP -->|DB Read| PG_SVC_RO
+    API_DEP -->|Cache| REDIS_SVC
+    API_DEP -->|Segments Read| PVC_API
+
+    VAULT -.->|Secrets| EXT_SECRETS
+    EXT_SECRETS -.->|K8s Secrets| API_DEP
+    EXT_SECRETS -.->|K8s Secrets| CRAWL_DEP
+    EXT_SECRETS -.->|K8s Secrets| INDEX_STS
+    EXT_SECRETS -.->|K8s Secrets| PG_STS
+
+    CERT_MGR -.->|TLS Certs| API_DEP
+    CERT_MGR -.->|mTLS Certs| CRAWL_DEP
+    CERT_MGR -.->|mTLS Certs| INDEX_STS
+
+    GHA -->|OIDC Token| API_DEP
+    GHA -->|Deploy| CRAWL_DEP
+    GHA -->|Deploy| INDEX_STS
+
+    API_DEP -->|Metrics| PROM_STS
+    API_DEP -->|Logs| LOKI_STS
+    API_DEP -.->|Traces| JAEGER_D
+    CRAWL_DEP -->|Metrics| PROM_STS
+    INDEX_STS -->|Metrics| PROM_STS
+    PG_STS -->|Metrics| PROM_STS
+    REDIS_STS -->|Metrics| PROM_STS
+
+    PROM_STS -->|Dashboards| GRAFANA_D
+    LOKI_STS -->|Logs| GRAFANA_D
+    JAEGER_D -->|Traces| GRAFANA_D
+
+    %% Styling
+    classDef search fill:#e3f2fd,stroke:#1565c0,stroke-width:2px;
+    classDef crawl fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
+    classDef index fill:#fff3e0,stroke:#ef6c00,stroke-width:2px;
+    classDef data fill:#fce4ec,stroke:#c2185b,stroke-width:2px;
+    classDef storage fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
+    classDef managed fill:#e0f2f1,stroke:#00695c,stroke-width:2px;
+    classDef obs fill:#fafafa,stroke:#757575,stroke-width:1px,stroke-dasharray: 5 5;
+    classDef ext fill:#eeeeee,stroke:#616161,stroke-width:1px;
+
+    class API_DEP,API_SVC,API_PDB search;
+    class CRAWL_DEP,CRAWL_SVC crawl;
+    class INDEX_STS,INDEX_SVC index;
+    class PG_STS,PG_SVC_RW,PG_SVC_RO,REDIS_STS,REDIS_SVC data;
+    class EFS,PVC_API,PVC_INDEXER,PV_POSTGRES,PV_REDIS storage;
+    class S3,VAULT,CERT_MGR,EXT_SECRETS managed;
+    class PROM_STS,LOKI_STS,JAEGER_D,GRAFANA_D obs;
+    class USERS,GHA,NLB,BASTION ext;

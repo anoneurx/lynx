@@ -1,0 +1,40 @@
+name: Deploy staging
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to staging
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify migrations are expand-only
+        run: scripts/db-migrate.sh verify-expand-only
+      - name: Authenticate to cluster (OIDC)
+        uses: azure/k8s-set-context@v4
+        with:
+          require-token: true
+      - name: Helm deploy
+        run: |
+          helm upgrade --install lynx \
+            infrastructure/kubernetes/charts/lynx \
+            --values infrastructure/kubernetes/overlays/staging/values.yaml \
+            --atomic --timeout 15m
+      - name: Smoke tests
+        run: scripts/smoke.sh https://staging.lynx.example
+      - name: Publish metrics snapshot for comparison
+        run: scripts/export-metrics.sh staging
+      - name: Roll back on failure
+        if: failure()
+        run: helm rollback lynx 0 --wait --timeout 10m

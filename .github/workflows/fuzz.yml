@@ -1,0 +1,49 @@
+name: Fuzzing
+
+on:
+  schedule:
+    - cron: "41 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: cargo-fuzz targets
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+      - name: seed corpora from checked-in fixtures
+        run: |
+          mkdir -p fuzz/corpus
+          cp -r tests/unit/fixtures/* fuzz/corpus/ 2>/dev/null || true
+      - name: run each target for a bounded time
+        run: |
+          set -euo pipefail
+          targets="url_norm query_parse html_parse jsonld fetch_safety charset tokenize robots"
+          for t in $targets; do
+            echo "::group::$t"
+            cargo fuzz run "$t" --fuzz-dir fuzz -- -max_total_time=420 -rss_limit_mb=4096
+            echo "::endgroup::"
+          done
+      - name: collect crashes
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts
+          retention-days: 30
+
+  differential:
+    name: id normalisation idempotence
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: urlnorm(urlnorm(u)) == urlnorm(u) over the corpus
+        run: cargo test -p lynx-common --lib urlnorm::tests --locked

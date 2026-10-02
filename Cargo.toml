@@ -1,0 +1,87 @@
+# Rust workspace members for LYNX.
+#
+# Design-stage scaffold: members are declared so the topology is explicit and
+# reproducible, but no crate sources exist yet. See docs/architecture.md.
+#
+# Naming: workspace crates use `lynx-<area>-<component>`.
+# Deployable binaries live in services/ and apps/api; libraries in packages/.
+
+[workspace]
+resolver = "2"
+members = [
+  # shared libraries
+  "packages/common",
+  "packages/models",
+  "packages/config",
+  "packages/logging",
+  "packages/security",
+
+  # backend services (binaries)
+  "services/query",
+  "services/ranker",
+  "services/suggestions",
+  "services/frontier",
+  "services/parser",
+  "services/indexer",
+  "services/crawler",
+  "services/ai",
+
+  # applications
+  "apps/api",
+]
+
+exclude = [
+  "infrastructure",
+  "research",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.78"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/anoneurx/lynx"
+authors = ["Anoneurx <engineering@anoneurx.com>"]
+edition.workspace = true
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+dbg_macro = "warn"
+todo = "warn"
+
+# Tooling versions are pinned so that `rustup show` is reproducible.
+[toolchain]
+channel = "1.78.0"
+components = ["rustfmt", "clippy", "miri", "llvm-tools-preview"]
+profile = "minimal"
+
+# Dependency versions are declared once here and inherited by member crates.
+[workspace.dependencies]
+anyhow = "1"
+thiserror = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+axum = "0.7"
+tower = "0.4"
+tower-http = "0.5"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "fs"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+config = "0.14"
+secrecy = "0.8"
+zeroize = "1"
+sqlx = { version = "0.7", features = ["postgres", "runtime-tokio", "macros"] }
+tantivy = "0.22"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+url = "2"
+regex = "1"
+unicode-segmentation = "1"

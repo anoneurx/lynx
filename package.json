@@ -1,0 +1,34 @@
+{
+  "name": "lynx",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LYNX — privacy-focused independent web search engine by Anoneurx",
+  "license": "AGPL-3.0-or-later",
+  "engines": {
+    "node": ">=20.11",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@9.12.3",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "pnpm --filter @lynx/web dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "test:e2e": "pnpm --filter @lynx/web test:e2e",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "docs:dev": "docsify-cli serve docs"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.1",
+    "@playwright/test": "^1.49.1",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2"
+  },
+  "engines_note": "Node is required only for the web/admin apps, tooling and docs. The search backend is Rust and needs no Node runtime in production."
+}

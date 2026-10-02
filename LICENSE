@@ -1,0 +1,82 @@
+GNU AFFERO GENERAL PUBLIC LICENSE
+                       Version 3, 19 November 2007
+
+ Copyright (C) 2007 Free Software Foundation, Inc. <https://fsf.org/>
+ Everyone is permitted to copy and distribute verbatim copies
+ of this license document, but changing it is not allowed.
+
+                            Preamble
+
+  The GNU Affero General Public License is a free, copyleft license for
+software and other kinds of works, specifically designed to ensure
+cooperation with the community in the case of network server software.
+
+  The licenses for most software and other practical works are designed
+to take away your freedom to share and change the works.  By contrast,
+our General Public Licenses are intended to guarantee your freedom to
+share and change all versions of a program--to make sure it remains free
+software for all its users.
+
+  A key part of this licence is that it requires you to make the source
+code of a modified version available to the users of a network server
+running that modified version.  This is what makes it possible for the
+LYNX project (the "Project") to require changes to be shared with the
+community.
+
+  The precise terms and conditions for copying, distribution and
+modification follow.  The full text of the GNU Affero General Public
+License version 3 is available at:
+
+    https://www.gnu.org/licenses/agpl-3.0.txt
+
+  This file is the LICENSE for the LYNX search engine, copyright
+  (c) 2026 Anoneurx.
+
+  ---------------------------------------------------------------------------
+
+  LICENCE NOTE FOR THIS PROJECT
+
+  The complete, canonical terms are the GNU Affero General Public
+  License version 3 (AGPL-3.0) as published by the Free Software
+  Foundation.  The verbatim text is reproduced in full at the URL above
+  and is incorporated here by reference.
+
+  Summary of what section 13 means for this project:
+
+    If you run a modified version of LYNX as a network service, you
+    must offer the corresponding source code of your modified version
+    to the users of that service.
+
+  Why: a search engine is infrastructure.  Publishing it is what keeps
+  it that way.
+
+  Commercial licensing
+
+    Commercial licensing of LYNX is available from Anoneurx.  A
+    commercial licence permits distribution and network operation
+    without the AGPL source-offer obligation.  It does not alter the
+    licence of the upstream AGPL source code.
+
+  Third-party components
+
+    LYNX depends on third-party open-source components under their
+    own licences (Rust dependencies, npm packages, container base
+    images).  Those licences continue to apply to those components.
+    `cargo deny check licenses` and the dependency audit are part of CI
+    to keep this boundary explicit.
+
+  Trademarks
+
+    The name "LYNX" and the Anoneurx name and marks are not licensed
+    by this licence.  This project is not affiliated with, endorsed by,
+    or derived from the Lynx browser project (lynx-browser.org); no
+    code, asset, or mark of that project is used here.
+
+  Documentation and content
+
+    Documentation in this repository is licensed AGPL-3.0-or-later
+    alongside the code.  Crawled third-party content is NOT licensed
+    under this licence: LYNX stores extracted text for search indexing
+    under the responsible-crawling policy documented in
+    docs/privacy/legal.md, subject to the rights of the respective
+    copyright holders.

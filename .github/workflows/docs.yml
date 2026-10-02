@@ -1,0 +1,43 @@
+name: Docs
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  markdown:
+    name: markdown lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: markdownlint
+        run: |
+          npm install -g markdownlint-cli2@0.14.0
+          markdownlint-cli2 "**/*.md" "#node_modules" "#target"
+      - name: prettier check
+        run: |
+          npm install -g prettier@3.4.2
+          prettier --check "**/*.md"
+
+  links:
+    name: internal link check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: relative links resolve
+        run: scripts/check-links.sh
+
+  mermaid:
+    name: mermaid diagrams render
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: parse every mermaid block
+        run: |
+          npm install -g @mermaid-js/mermaid-cli@11.4.2
+          npx mmdc --version
+          # extracts ```mermaid blocks from docs/ and renders each one;
+          # a diagram that does not parse fails the build
+          scripts/check-mermaid.sh

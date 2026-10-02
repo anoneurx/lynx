@@ -1,0 +1,122 @@
+%% Data Flow Diagram
+%% LYNX Search Engine - Request Lifecycle & Component Interactions
+%% Render: mmdc -i data-flow.mmd -o data-flow.svg
+
+flowchart TB
+    subgraph EXT[External Clients]
+        UA[User Agent\nBrowser / CLI]
+        BOT[Partner Bots\nAPI Consumers]
+    end
+
+    subgraph EDGE[Edge / Ingress]
+        LB[Load Balancer\nTLS 1.3, WAF]
+        CDN[CDN\nStatic assets only]
+    end
+
+    subgraph SEARCH[Search Plane 🔵\n(Stateless, Read-Only)]
+        API1[lynx-api Pod 1]
+        API2[lynx-api Pod 2]
+        API3[lynx-api Pod N]
+        READER1[(Tantivy Reader\nGen-N)]
+        READER2[(Tantivy Reader\nGen-N)]
+        CACHE[(Redis Cluster\nQuery Cache\nTTL 5m)]
+    end
+
+    subgraph CRAWL[Crawl Plane 🟢\n(Write Path)]
+        CRAWL1[lynx-crawler Worker 1]
+        CRAWL2[lynx-crawler Worker M]
+        QUEUE[(Redis Streams\ncrawl:queue)]
+        POLITE[(Redis Sorted Sets\npoliteness:domain)]
+        FETCH[Fetch\nHTTP/2, TLS]
+        PARSE[Parse\nHTML → Text]
+        EXTRACT[Extract\nLinks, Meta]
+        S3[(MinIO / S3\nRaw HTML + WARC)]
+    end
+
+    subgraph INDEX[Index Plane 🟠\n(Batch, Async)]
+        INDEXER[lynx-indexer\nLeader Elected]
+        BUILD[Build Generation N+1]
+        MERGE[Segment Merge]
+        PUBLISH[Atomic Swap\nsymlink + Pub/Sub]
+        PG_IDX[(Postgres\nIndex Metadata\ngeneration, stats)]
+    end
+
+    subgraph DATA[Data Layer]
+        PG[(Postgres Cluster\nPatroni 3-node\nOperational DB)]
+        REDIS[(Redis Cluster\n6 Shards\nCache + Coordination)]
+        TANTIVY_VOL[ReadOnlyMany Volume\nNFS/EFS\nTantivy Segments]
+    end
+
+    subgraph OBS[Observability]
+        PROM[Prometheus\nMetrics]
+        LOKI[Loki\nLogs]
+        JAEGER[Jaeger\nTraces]
+        GRAFANA[Grafana\nDashboards]
+    end
+
+    %% User Request Flow
+    UA -->|HTTPS /v1/search| LB
+    BOT -->|HTTPS /v1/search| LB
+    LB -->|Round-robin| API1
+    LB -->|Round-robin| API2
+    LB -->|Round-robin| API3
+
+    %% API Internal
+    API1 -.->|Cache lookup\nGET search:{hash}| CACHE
+    CACHE -.->|Hit: Return JSON| API1
+    API1 -->|Miss: Search\nReader.search()| READER1
+    READER1 -->|Segment files| TANTIVY_VOL
+    READER1 -.->|Results| API1
+    API1 -.->|Cache store\nSET search:{hash}| CACHE
+    API1 -->|Response| LB
+    LB -->|JSON| UA
+
+    %% Suggestions
+    API1 -.->|GET suggest:{prefix}| CACHE
+    CACHE -.->|Hit/Miss| API1
+
+    %% Crawl Flow
+    QUEUE -->|BLPOP\nURL + Priority| CRAWL1
+    CRAWL1 -->|Check token\nZRANK politeness:domain| POLITE
+    POLITE -->|Wait / Proceed| CRAWL1
+    CRAWL1 -->|FETCH\nGET /| FETCH
+    FETCH -->|HTTP Response| PARSE
+    PARSE -->|Text + Links| EXTRACT
+    EXTRACT -->|Store HTML\nPUT s3://bucket/hash| S3
+    EXTRACT -->|Enqueue links\nLPUSH crawl:queue| QUEUE
+    EXTRACT -->|Upsert metadata\nINSERT pages| PG
+
+    %% Indexer Flow
+    PG_IDX -->|Read pages\nWHERE indexed=false| INDEXER
+    INDEXER -->|Fetch content\nGET s3://bucket/hash| S3
+    INDEXER -->|Build segments\nTantivy IndexWriter| BUILD
+    BUILD -->|Merge policy| MERGE
+    MERGE -->|Write Gen-N+1| TANTIVY_VOL
+    MERGE -->|Publish\nln -sfn gen-N+1 current| PUBLISH
+    PUBLISH -.->|Redis PUBLISH\nINDEX_RELOAD N+1| READER1
+    PUBLISH -.->|Redis PUBLISH\nINDEX_RELOAD N+1| READER2
+    PUBLISH -->|Update metadata\nUPDATE index_gen| PG_IDX
+
+    %% Observability
+    API1 -->|Metrics\nHTTP latency, errors| PROM
+    API1 -->|Logs\nStructured JSON| LOKI
+    API1 -.->|Traces\nW3C traceparent| JAEGER
+    CRAWL1 -->|Metrics\nQueue depth, fetch latency| PROM
+    INDEXER -->|Metrics\nBuild duration, docs/s| PROM
+    PG -->|Metrics\nConnections, replication lag| PROM
+    REDIS -->|Metrics\nMemory, hit rate| PROM
+
+    %% Styling
+    classDef search fill:#e3f2fd,stroke:#1565c0,stroke-width:2px;
+    classDef crawl fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
+    classDef index fill:#fff3e0,stroke:#ef6c00,stroke-width:2px;
+    classDef data fill:#fce4ec,stroke:#c2185b,stroke-width:2px;
+    classDef obs fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
+    classDef ext fill:#eeeeee,stroke:#616161,stroke-width:1px,stroke-dasharray: 5 5;
+
+    class API1,API2,API3,READER1,READER2,CACHE search;
+    class CRAWL1,CRAWL2,QUEUE,POLITE,FETCH,PARSE,EXTRACT,S3 crawl;
+    class INDEXER,BUILD,MERGE,PUBLISH,PG_IDX index;
+    class PG,REDIS,TANTIVY_VOL data;
+    class PROM,LOKI,JAEGER,GRAFANA obs;
+    class UA,BOT,LB,CDN ext;

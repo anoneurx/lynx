@@ -1,0 +1,65 @@
+name: Feature request
+
+description: Propose a capability for LYNX
+title: "[feature] "
+labels: ["feature", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Feature requests are weighed against the project's non-goals. Read ROADMAP.md
+        first — several plausible ideas are explicitly out of scope, and that is a
+        decision rather than an oversight.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is hard or impossible today? Skip the solution for now.
+      placeholder: |
+        As a user, I cannot …
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What you would like to happen.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [search, ranking, crawler, indexing, privacy, security, frontend, api, ai, infrastructure, documentation]
+    validations:
+      required: true
+
+  - type: textarea
+    id: privacy-impact
+    attributes:
+      label: Privacy and security impact
+      description: |
+        Does this change what LYNX stores, sends, or exposes? Does it require data
+        we currently do not collect? Does it expand the trust boundary?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Including "do nothing".
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Confirm
+      options:
+        - label: This does not require logging search queries or building a user profile.
+          required: true
+        - label: This does not require a third-party service on the query path.

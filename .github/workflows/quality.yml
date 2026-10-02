@@ -1,0 +1,58 @@
+name: Search quality gates
+
+# Ranking is a product decision. This workflow fails on metric regression, not just on
+# test failure, and uploads the golden diff for human review.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ranking-golden:
+    name: Ranking golden diff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test -p lynx-test-ranking --locked
+      - name: generate golden diff
+        run: cargo run -p lynx-eval --release --locked -- --config config/development.toml --diff
+      - name: upload golden diff
+        uses: actions/upload-artifact@v4
+        with:
+          name: ranking-golden-diff
+          path: tests/ranking/golden/*.diff
+          retention-days: 14
+
+  quality-metrics:
+    name: Relevance and quality metric gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - name: build evaluation index from checked-in fixtures
+        run: scripts/seed-ranking-corpus.sh
+      - name: evaluate against baseline
+        run: |
+          cargo run -p lynx-eval --release --locked -- \
+            --config config/development.toml \
+            --gate \
+            --baseline research/benchmarks/baseline.json
+      - name: report
+        if: always()
+        run: |
+          {
+            echo "### Search quality report"
+            cat research/reports/latest.md 2>/dev/null || echo "_no report generated_"
+          } >> "$GITHUB_STEP_SUMMARY"

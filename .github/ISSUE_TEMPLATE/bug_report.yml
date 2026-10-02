@@ -1,0 +1,81 @@
+name: Bug report
+
+description: Something in LYNX behaves incorrectly
+title: "[bug] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please do not report security issues here — see SECURITY.md.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what happened instead.
+      placeholder: |
+        I searched for "…" and expected … but instead …
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Smallest set of steps that reproduces it.
+      placeholder: |
+        1. …
+        2. …
+        3. …
+    validations:
+      required: true
+
+  - type: textarea
+    id: query-shape
+    attributes:
+      label: Query shape (optional)
+      description: |
+        Do NOT paste a sensitive query. Describe its SHAPE instead — length in
+        characters, roughly how many words, and which operators you used
+        (site:, filetype:, intitle:, quotes, minus, OR).
+        Example: "about 30 characters, 3 words, one site: operator".
+      placeholder: length, word count, operators used
+
+  - type: input
+    id: request-id
+    attributes:
+      label: Request ID (optional)
+      description: From the error page or the X-Request-Id response header.
+      placeholder: 01J8Z…
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Search results / ranking
+        - Web UI
+        - API
+        - Suggestions
+        - Crawler
+        - Indexing
+        - Admin console
+        - Documentation
+        - Other / not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Deployment stage, and where you are accessing LYNX from.
+    validations:
+      required: true
+
+  - type: input
+    id: lynx-version
+    attributes:
+      label: LYNX version or commit
+      placeholder: v0.1.0 or the sha in the footer

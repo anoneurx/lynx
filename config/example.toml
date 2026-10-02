@@ -1,0 +1,153 @@
+# `config/example.toml`
+#
+# The reference configuration. Every key LYNX understands, with its default and why.
+# Copy sections from here rather than inventing new keys: unknown keys are a startup error.
+#
+# Never place a secret value in this file. Use:
+#     password = { secret_ref = "lynx/<env>/<service>/<name>" }
+
+[core]
+environment   = "development"          # development | staging | production
+log_level     = "info"
+log_format    = "json"                 # json | pretty (pretty rejected in production)
+instance_id   = "dev-1"
+
+# ── API ─────────────────────────────────────────────────────────────────────────
+[api]
+bind                  = "0.0.0.0:8080"
+public_url            = "http://localhost:3000"
+cors_origins          = ["http://localhost:3000"]   # first-party only; no "*" in production
+trusted_proxy_depth   = 0     # number of proxies in front of us that we trust for X-Forwarded-For.
+                             # >0 means we accept a client-supplied address from those hops.
+                             # Setting this wrongly lets clients forge their rate-limit bucket.
+max_query_bytes       = 512   # longer queries are rejected before parsing
+max_results_per_page  = 50
+default_results       = 10
+max_candidates        = 2000  # candidate set size pulled from the index before ranking
+request_timeout_ms    = 3000  # server-side budget; returns 503 TIMEOUT past it
+
+[api.pagination]
+mode       = "cursor"      # cursor | page. Cursor is stable under a moving index.
+max_limit  = 50
+
+# ── Database ────────────────────────────────────────────────────────────────────
+[database]
+url                  = { secret_ref = "lynx/development/postgres/app" }
+max_connections      = 20
+min_connections      = 2
+statement_timeout_ms = 30000
+acquire_timeout_ms   = 5000
+
+# ── Cache ───────────────────────────────────────────────────────────────────────
+# Two independent namespaces, deliberately separated by purpose and retention.
+[cache.query]
+enabled      = true
+ttl_seconds  = 120
+max_entries  = 50000
+key_secret   = { secret_ref = "lynx/development/cache/query" }
+
+[cache.index]
+enabled      = true
+ttl_seconds  = 600
+
+# ── Index ───────────────────────────────────────────────────────────────────────
+[index]
+dir              = "/tmp/lynx-dev-index"
+shards           = 1
+memory_budget_mb = 1024
+commit_interval_seconds = 20
+commit_docs_threshold  = 5000
+num_search_threads     = 4
+merge_policy_segments  = 8
+
+# ── Ranking ─────────────────────────────────────────────────────────────────────
+[ranking]
+config_version = "v0.1.0"       # bump on any weight change → forces re-index attribution
+candidates     = 2000
+snippet_max_chars = 240
+
+[ranking.signals]
+# Weights are the transparent core of LYNX ranking. See docs/ranking/ for derivation.
+bm25        = 1.00
+freshness   = 0.18
+quality     = 0.12
+authority   = 0.15
+context     = 0.10
+spam_penalty = 0.40   # multiplicative
+
+# ── Crawler ─────────────────────────────────────────────────────────────────────
+[crawler]
+user_agent       = "LynxBot/0.1 (+https://anoneurx.com/lynx/bot)"
+user_agent_group = "LynxBot"
+concurrency      = 8                 # global in-flight fetches per worker
+allowed_schemes  = ["http", "https"]
+allowed_ports    = [80, 443]
+max_redirects    = 5
+max_depth        = 20
+max_response_bytes = 5242880         # 5 MiB
+max_decompression_ratio = 100        # decompressed:compressed ceiling (decompression bombs)
+connect_timeout_ms   = 5000
+header_timeout_ms    = 5000
+read_idle_timeout_ms = 5000
+total_timeout_ms     = 15000
+respect_robots       = true           # disabling requires an ADR and blocks production start
+cache_robots         = true
+
+[crawler.budget]
+max_pages_per_host_day  = 5000
+max_bytes_per_host_day  = 5368709120  # 5 GiB
+min_inter_request_ms   = 1000         # floor on politeness delay
+max_concurrent_per_host = 2
+
+# ── Privacy ─────────────────────────────────────────────────────────────────────
+# See PRIVACY.md §8. Weakening any of these requires an ADR.
+[privacy]
+query_logging        = false       # MUST be false in every environment; production start fails otherwise
+metrics_query_shapes = true        # length bucket / token count / operator class only
+response_cache       = true
+third_party_assets   = "forbidden"
+
+[privacy.rate_limit]
+enabled         = true
+prefix_bits_v4  = 24
+prefix_bits_v6  = 48
+salt_ttl_hours  = 24
+salt            = { secret_ref = "lynx/development/ratelimit/salt" }
+anonymous_per_minute = 30
+developer_per_minute  = 300
+
+# ── Security ────────────────────────────────────────────────────────────────────
+[security]
+tls_min_version         = "1.3"
+allowed_ciphers         = ["TLS_AES_256_GCM_SHA384", "TLS_CHACHA20_POLY1305_SHA256"]
+hsts_max_age            = 63072000
+admin_require_vpn       = true
+api_key_prefix          = "lnx_"
+
+# ── AI (optional) ───────────────────────────────────────────────────────────────
+[ai]
+enabled             = false
+provider            = "none"        # none | openai-compatible | self-hosted
+model               = ""            # pinned id; a floating id is refused in production
+endpoint            = ""
+api_key             = { secret_ref = "lynx/development/ai/provider" }
+max_source_tokens   = 6000
+max_sources         = 10
+answer_cache_ttl    = 600
+daily_token_budget  = 2000000
+require_citations   = true
+fail_closed         = true          # no verified citations → no answer
+
+# ── Observability ───────────────────────────────────────────────────────────────
+[observability]
+metrics_bind   = "0.0.0.0:9090"
+metrics_path   = "/metrics"
+tracing        = false
+tracing_endpoint = ""
+tracing_sample_ratio = 0.01
+log_retention_days  = 14
+
+# ── Admin ───────────────────────────────────────────────────────────────────────
+[admin]
+enable_basic_auth = true   # local only; production validator requires SSO and rejects this
+bind              = "127.0.0.1:9091"

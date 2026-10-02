@@ -1,0 +1,80 @@
+name: Security report
+
+description: Report a vulnerability in LYNX privately
+title: "[security] "
+labels: ["security", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Do not file security reports as public issues
+
+        Use the private reporting channel described in SECURITY.md:
+        GitHub Security Advisories on this repository, or the security contact
+        published at https://anoneurx.com/security.
+
+        This template exists only so that a public issue can be auto-converted into a
+        private report by a maintainer if one is filed here by mistake.
+
+  - type: dropdown
+    id: class
+    attributes:
+      label: Vulnerability class
+      options:
+        - SSRF / internal network access from the crawler
+        - Crawler sandbox escape or policy bypass
+        - Injection (SQL, command, template, log)
+        - Authentication or authorization flaw
+        - Secrets exposure
+        - Privacy model violation (query or PII persistence)
+        - Denial of service
+        - Supply chain
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One paragraph. What is the flaw and what does it allow?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Steps or a minimal proof of concept.
+      placeholder: |
+        curl …
+        or a local test case
+    validations:
+      required: true
+
+  - type: input
+    id: affected
+    attributes:
+      label: Affected component or version
+      placeholder: services/crawler safety.rs @ main, or v0.1.0
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: What does an attacker gain? Be specific about assets.
+
+  - type: textarea
+    id: suggested-fix
+    attributes:
+      label: Suggested mitigation (optional)
+      description: |
+        Very welcome. You will not be required to implement it.
+
+  - type: checkboxes
+    id: disclosure
+    attributes:
+      label: Disclosure
+      options:
+        - label: I have not disclosed this publicly anywhere else.
+        - label: I understand LYNX follows coordinated disclosure and credits reporters.

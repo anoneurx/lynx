@@ -1,0 +1,44 @@
+name: Performance
+
+on:
+  schedule:
+    - cron: "51 2 * * *"
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  budgets:
+    name: Performance budgets
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.11
+          cache: pnpm
+
+      - name: Provision the benchmark stack
+        run: scripts/perf-stack.sh up
+      - name: Build the benchmark index
+        run: scripts/perf-index.sh
+      - name: k6 search load
+        run: scripts/bench.sh search
+      - name: Indexer and crawler throughput
+        run: scripts/bench.sh ingest
+      - name: Compare against budgets
+        run: scripts/check-perf-budget.sh
+      - name: Publish report
+        if: always()
+        run: cat perf-report.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Teardown
+        if: always()
+        run: scripts/perf-stack.sh down

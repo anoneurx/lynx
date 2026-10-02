@@ -1,0 +1,51 @@
+name: Research question
+
+description: An experiment, measurement, or investigation
+title: "[research] "
+labels: ["research", "needs-triage"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What do we not know that we should?
+      placeholder: |
+        Does embedding-based retrieval beat BM25F on our judged set at acceptable cost?
+    validations:
+      required: true
+
+  - type: textarea
+    id: hypothesis
+    attributes:
+      label: Hypothesis
+      description: A falsifiable statement, stated before the experiment runs.
+    validations:
+      required: true
+
+  - type: textarea
+    id: method
+    attributes:
+      label: Method
+      description: Data, metrics, and how it will be measured.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Relevant roadmap phase
+      options: ["Phase 1 — Search prototype", "Phase 2 — Crawler", "Phase 3 — Real search engine", "Phase 4 — Privacy", "Phase 5 — AI", "Phase 6 — Scale"]
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Constraints
+      description: Research in LYNX has hard limits. Confirm these before proposing.
+      options:
+        - label: This does not require logging user search queries.
+          required: true
+        - label: This does not require production traffic manipulation.
+        - label: This does not require unlicensed third-party data.
+        - label: This can be reproduced from a clean checkout with pinned data versions.
