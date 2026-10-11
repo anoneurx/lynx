@@ -626,6 +626,10 @@ dependencies = [
  "lynx-common",
  "lynx-models",
  "pretty_assertions",
+ "proptest",
+ "serde",
+ "serde_json",
+ "time",
 ]
 
 [[package]]
