@@ -73,6 +73,7 @@ complete specification.
 | Operate it | [DEPLOYMENT.md](./DEPLOYMENT.md), [docs/operations/](./docs/operations/observability.md) |
 | Know why a decision was made | [docs/adr/](./docs/adr/README.md) |
 | Know what is next | [ROADMAP.md](./ROADMAP.md) |
+| See the phased timeline | [docs/timeline.md](./docs/timeline.md) |
 
 ## Honest limitations
 

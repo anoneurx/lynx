@@ -6,6 +6,7 @@ Start at [`architecture.md`](./architecture.md). The complete specification is
 | Area | Documents |
 | ---- | --------- |
 | Getting started | [getting-started.md](./getting-started.md) · [DEVELOPMENT.md](../DEVELOPMENT.md) |
+| Timeline | [timeline.md](./timeline.md) — phased delivery plan |
 | Architecture | [architecture.md](./architecture.md) · [architecture/overview.md](./architecture/overview.md) · [architecture/specification.md](./architecture/specification.md) |
 | Crawler | [crawler/](./crawler/README.md) — frontier, robots, downloader, parser, safety, politeness |
 | Indexing | [indexing/](./indexing/README.md) — pipeline, tokenization, schema, dedup |
