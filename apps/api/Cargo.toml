@@ -1,0 +1,20 @@
+[package]
+name = "lynx-api"
+description = "Public HTTP API: search, suggestions, status. A thin shell over the services."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+lynx-common.workspace = true
+lynx-models.workspace = true
+lynx-config.workspace = true
+lynx-logging.workspace = true
+lynx-query = { path = "../../services/query" }
+tracing.workspace = true
+
+[lints]
+workspace = true

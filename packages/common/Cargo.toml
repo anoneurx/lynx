@@ -1,0 +1,35 @@
+[package]
+name = "lynx-common"
+description = "Shared, dependency-light primitives (ids, time, errors, hashing, URL/text normalisation, byte sizes)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+serde = { workspace = true, optional = true }
+uuid.workspace = true
+blake3.workspace = true
+hmac.workspace = true
+sha2.workspace = true
+hex.workspace = true
+subtle.workspace = true
+time.workspace = true
+url.workspace = true
+unicode-normalization.workspace = true
+unicode-segmentation.workspace = true
+regex.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+pretty_assertions.workspace = true
+
+[features]
+default = []
+serde = ["dep:serde", "uuid/serde", "time/serde"]
+
+[lints]
+workspace = true

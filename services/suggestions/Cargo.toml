@@ -1,0 +1,18 @@
+[package]
+name = "lynx-suggestions"
+description = "Query completions derived from the corpus, never from query logs."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+lynx-common.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+
+[lints]
+workspace = true

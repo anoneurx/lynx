@@ -1,0 +1,19 @@
+[package]
+name = "lynx-indexer"
+description = "Builds Tantivy index generations from ParsedDocuments."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+lynx-common.workspace = true
+lynx-models.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+
+[lints]
+workspace = true

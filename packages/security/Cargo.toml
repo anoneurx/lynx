@@ -1,0 +1,31 @@
+[package]
+name = "lynx-security"
+description = "Reusable, auditable security controls: rate-limit buckets, API keys, headers, blocklists."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+lynx-common = { workspace = true }
+thiserror.workspace = true
+sha2.workspace = true
+hmac.workspace = true
+subtle.workspace = true
+hex.workspace = true
+base64.workspace = true
+rand.workspace = true
+time.workspace = true
+serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+
+[features]
+default = []
+serde = ["dep:serde"]
+
+[lints]
+workspace = true

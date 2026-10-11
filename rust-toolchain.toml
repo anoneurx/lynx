@@ -1,0 +1,7 @@
+# Pinned toolchain. `stable` is used during the prototype phase; the release
+# channel is pinned by digest in CI (see .github/workflows). Reproducibility
+# policy: ADR-0021.
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

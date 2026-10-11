@@ -1,0 +1,21 @@
+[package]
+name = "lynx-models"
+description = "Domain types and public API contract types shared across LYNX planes."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+lynx-common = { workspace = true, features = ["serde"] }
+serde.workspace = true
+serde_json.workspace = true
+time.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,19 @@
+[package]
+name = "lynx-frontier"
+description = "Priority crawl frontier with per-host politeness and budget enforcement."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+lynx-common.workspace = true
+lynx-models.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+
+[lints]
+workspace = true

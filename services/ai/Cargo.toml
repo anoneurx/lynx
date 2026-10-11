@@ -1,0 +1,18 @@
+[package]
+name = "lynx-ai"
+description = "Optional, citation-required answer layer. Off by default."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+lynx-common.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+
+[lints]
+workspace = true
