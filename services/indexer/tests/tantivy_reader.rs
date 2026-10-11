@@ -9,8 +9,10 @@
 
 use lynx_common::ids::DocumentId;
 use lynx_indexer::{
-    IndexGeneration, IndexedDocument, SearchIndexReader, SearchOptions, TantivyIndexReader,
+    AddOutcome, GenerationBuilder, IndexGeneration, IndexedDocument, SearchIndexReader,
+    SearchOptions, TantivyIndexReader,
 };
+use lynx_models::domain::ParsedDocument;
 use lynx_query::{parse, QueryPlan};
 use time::macros::datetime;
 
@@ -192,4 +194,65 @@ fn empty_query_matches_everything() {
     let index = sample();
     let plan: QueryPlan = parse("");
     assert_eq!(index.count(&plan).unwrap(), 4);
+}
+
+fn parsed(url: &str, title: &str, body: &str) -> ParsedDocument {
+    ParsedDocument {
+        canonical: url.to_string(),
+        title: title.to_string(),
+        headings: Vec::new(),
+        body: body.to_string(),
+        anchors: Vec::new(),
+        links: Vec::new(),
+        lang: Some("en".to_string()),
+        content_hash: format!("h-{url}"),
+    }
+}
+
+#[test]
+fn generation_round_trips_through_disk() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut builder = GenerationBuilder::new(datetime!(2026-03-01 00:00 UTC));
+    assert_eq!(
+        builder.add(parsed(
+            "https://docs.rs/tokio",
+            "Tokio async runtime",
+            "An asynchronous runtime for Rust.",
+        )),
+        AddOutcome::Indexed
+    );
+    builder.add(parsed(
+        "https://ziglang.org/learn",
+        "Learning Zig",
+        "Zig is a general-purpose language.",
+    ));
+
+    let written = builder.write_to_dir(dir.path(), 7).unwrap();
+    assert_eq!(written.id, 7);
+    assert_eq!(written.doc_count, 2);
+    assert!(!written.checksum.is_empty());
+
+    let index = TantivyIndexReader::open(dir.path()).unwrap();
+    assert_eq!(index.generation().id, 7);
+    assert_eq!(index.generation().doc_count, 2);
+    assert_eq!(search(&index, "rust async").len(), 1);
+    assert_eq!(index.count(&parse("zig")).unwrap(), 1);
+}
+
+#[test]
+fn reopening_preserves_generation_manifest() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut builder =
+        GenerationBuilder::new(datetime!(2026-03-01 00:00 UTC)).with_ranking_config_version("v9");
+    builder.add(parsed("https://a.example/x", "Title", "Body text"));
+
+    let written = builder.write_to_dir(dir.path(), 11).unwrap();
+    let reopened = TantivyIndexReader::open(dir.path()).unwrap();
+    assert_eq!(reopened.generation(), written);
+}
+
+#[test]
+fn open_missing_generation_is_unavailable() {
+    let dir = tempfile::tempdir().unwrap();
+    assert!(TantivyIndexReader::open(dir.path()).is_err());
 }

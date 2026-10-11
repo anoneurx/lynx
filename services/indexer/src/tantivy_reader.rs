@@ -4,6 +4,8 @@
 //! trait and its value types, so the engine stays replaceable (see ADR-0002). This is the
 //! production reader; the in-memory [`crate::memory::InMemoryIndex`] is the reference.
 
+use std::path::Path;
+
 use lynx_query::QueryPlan;
 use tantivy::collector::TopDocs;
 use tantivy::query::{AllQuery, BooleanQuery, Occur, PhraseQuery, Query, TermQuery};
@@ -20,6 +22,9 @@ use crate::reader::{
     IndexError, IndexGeneration, Result, SearchIndexReader, SearchOptions, TermExplanation,
 };
 use crate::tokenizer::tokenize;
+
+/// The manifest file written alongside a generation's index segments.
+const GENERATION_FILE: &str = "generation.json";
 
 /// The concrete schema, resolved to field handles once.
 struct Fields {
@@ -182,6 +187,70 @@ impl TantivyIndexReader {
             .reader()
             .map_err(|e| IndexError::Unavailable(e.to_string()))?;
         let mut generation = generation;
+        generation.doc_count = reader.searcher().num_docs();
+        Ok(Self {
+            reader,
+            fields,
+            generation,
+        })
+    }
+
+    /// Write `docs` as a sealed Tantivy index in `dir`, with its generation manifest.
+    ///
+    /// The reader is the only writer, and a directory holds exactly one sealed generation
+    /// (ADR-0004). The manifest records the tokenizer/ranking versions and checksum, so a
+    /// generation can always be attributed to the analysis that built it.
+    ///
+    /// # Errors
+    /// Returns [`IndexError`] if the directory cannot be created, the index cannot be
+    /// written and committed, or the manifest cannot be serialised.
+    pub fn write_to_dir(
+        dir: &Path,
+        docs: impl IntoIterator<Item = IndexedDocument>,
+        generation: &IndexGeneration,
+    ) -> Result<()> {
+        std::fs::create_dir_all(dir).map_err(|e| IndexError::Unavailable(e.to_string()))?;
+        let (schema, fields) = build_schema();
+        let index = Index::create_in_dir(dir, schema)
+            .map_err(|e| IndexError::Unavailable(e.to_string()))?;
+        let mut writer = index
+            .writer(50_000_000)
+            .map_err(|e| IndexError::Unavailable(e.to_string()))?;
+
+        for d in docs {
+            let doc = to_tantivy_document(&fields, &d);
+            writer
+                .add_document(doc)
+                .map_err(|e| IndexError::Internal(e.to_string()))?;
+        }
+        writer
+            .commit()
+            .map_err(|e| IndexError::Internal(e.to_string()))?;
+
+        let bytes = serde_json::to_vec_pretty(generation)
+            .map_err(|e| IndexError::Internal(e.to_string()))?;
+        std::fs::write(dir.join(GENERATION_FILE), bytes)
+            .map_err(|e| IndexError::Unavailable(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Open a generation previously written by [`Self::write_to_dir`].
+    ///
+    /// # Errors
+    /// Returns [`IndexError::Unavailable`] if the directory or manifest is missing or the
+    /// index cannot be opened, and [`IndexError::Corrupt`] if the manifest is malformed.
+    pub fn open(dir: &Path) -> Result<Self> {
+        let manifest_path = dir.join(GENERATION_FILE);
+        let bytes = std::fs::read(&manifest_path)
+            .map_err(|e| IndexError::Unavailable(format!("{}: {e}", manifest_path.display())))?;
+        let mut generation: IndexGeneration = serde_json::from_slice(&bytes)
+            .map_err(|e| IndexError::Corrupt(format!("generation manifest: {e}")))?;
+
+        let index = Index::open_in_dir(dir).map_err(|e| IndexError::Unavailable(e.to_string()))?;
+        let fields = build_fields(&index.schema());
+        let reader = index
+            .reader()
+            .map_err(|e| IndexError::Unavailable(e.to_string()))?;
         generation.doc_count = reader.searcher().num_docs();
         Ok(Self {
             reader,

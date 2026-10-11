@@ -130,6 +130,10 @@ Switching is atomic: open the new generation's readers, then swap the pointer.
 The previous generation is retained for 24 h.
 ```
 
+The manifest is written as `generation.json` inside the generation directory, beside the
+Tantivy segments. `TantivyIndexReader::open` reads it to attribute a result to the exact
+tokenizer and ranking configuration that produced it.
+
 One generation per index schema. A schema change means a new generation; old generations
 remain readable until retired, which is what makes schema changes and ranking changes
 safe to roll back.

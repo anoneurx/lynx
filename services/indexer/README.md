@@ -33,6 +33,19 @@ ParsedDocument
 | Compaction | Merge policy and force-merge triggered by segment count/size thresholds |
 | Snapshotting | Tagged snapshots to object storage for disaster recovery |
 
+## v0.1 scope
+
+Step 4 implements the front and back of the pipeline only: normalisation, field
+assembly, empty-text rejection, content-hash idempotency, and generation sealing
+([`GenerationBuilder`](src/build.rs)), then writing a sealed Tantivy generation to a
+directory ([`TantivyIndexReader::write_to_dir`](src/tantivy_reader.rs)). The generation
+manifest is written as `generation.json` next to the segments and carries the tokenizer
+and ranking-config versions, the shard count, and a deterministic checksum.
+
+Language confirmation, stopwords, stemming, dedup, term-statistic caps, compaction, and
+the operational Postgres writes are later steps; the builder's interface is shaped so
+they slot in without changing callers.
+
 ## Rules
 
 - The indexer is the **only** writer to the search index. No admin route may write a

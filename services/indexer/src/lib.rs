@@ -1,18 +1,20 @@
 //! `lynx-indexer` — index generations and the readable index abstraction.
 //!
-//! This crate owns two things:
+//! This crate owns:
 //!
 //! - [`reader`] — the [`SearchIndexReader`](reader::SearchIndexReader) trait and its value
 //!   types. This is the boundary that keeps the index engine replaceable; it pulls in no
 //!   engine dependency itself.
 //! - [`memory`] — an in-memory reference reader used by tests.
+//! - [`build`] — [`GenerationBuilder`](build::GenerationBuilder), the engine-agnostic
+//!   indexer that seals parsed documents into an immutable generation.
 //!
-//! A Tantivy-backed reader is available behind the `tantivy` feature. The indexer that
-//! *writes* generations lands in Step 4.
+//! A Tantivy-backed reader *and writer* are available behind the `tantivy` feature.
 
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 #![forbid(unsafe_code)]
 
+pub mod build;
 pub mod memory;
 pub mod reader;
 pub mod tokenizer;
@@ -23,6 +25,7 @@ pub mod tantivy_reader;
 #[cfg(feature = "tantivy")]
 pub use tantivy_reader::TantivyIndexReader;
 
+pub use build::{AddOutcome, GenerationBuilder, RANKING_CONFIG_VERSION, TOKENIZER_VERSION};
 pub use memory::{InMemoryIndex, IndexedDocument};
 pub use reader::{
     passes_filters, Candidate, DocId, DocumentMetadata, Explanation, FieldHits, FieldWeights,
