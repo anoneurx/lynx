@@ -4,7 +4,12 @@
 //! hold for the in-memory fake and the Tantivy reader alike. See
 //! `docs/indexing/index-schema.md`.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::cast_possible_truncation
+)]
 
 use lynx_common::ids::DocumentId;
 use lynx_indexer::{InMemoryIndex, IndexedDocument, SearchIndexReader, SearchOptions};
@@ -229,4 +234,35 @@ fn default_clock_still_excludes_undated_documents() {
     let hits = index.search(&plan, &SearchOptions::default()).unwrap();
     assert!(hits.iter().any(|c| c.url == "https://docs.rs/tokio"));
     assert!(!hits.iter().any(|c| c.url == "https://example.com/undated"));
+}
+
+#[test]
+fn collection_stats_report_corpus_size_and_field_lengths() {
+    let index = sample();
+    let stats = index.collection_stats().unwrap();
+    assert_eq!(stats.doc_count, 4);
+    assert!(stats.avg.body > 0.0);
+    assert!(stats.avg.title > 0.0);
+}
+
+#[test]
+fn candidates_carry_per_field_frequencies_and_lengths() {
+    // `runtime` appears in doc 1's title and body only, so df is 1 and both field hits survive.
+    let index = sample();
+    let hits = search(&index, "runtime");
+    assert_eq!(hits.len(), 1);
+    let c = &hits[0];
+    let runtime = c
+        .terms
+        .iter()
+        .find(|t| t.term == "runtime")
+        .expect("runtime term present");
+    assert_eq!(runtime.df, 1);
+    assert_eq!(runtime.tf.title, 1);
+    assert_eq!(runtime.tf.body, 1);
+    // Field lengths are the token counts of each stored field.
+    assert_eq!(
+        c.field_lengths.title,
+        c.title.split_whitespace().count() as u32
+    );
 }

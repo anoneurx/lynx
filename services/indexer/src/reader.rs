@@ -128,10 +128,107 @@ pub struct FieldHits {
     pub alt: u32,
 }
 
+/// A query term's frequency in each field of one document, plus its corpus document
+/// frequency.
+///
+/// This is the raw material BM25F needs. The reader keeps no scoring policy: it reports
+/// counts, and the ranker decides what they are worth.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TermFrequency {
+    /// The (normalised) term.
+    pub term: String,
+    /// Number of documents containing the term in any field.
+    pub df: u64,
+    /// Term frequency in each field.
+    pub tf: FieldHits,
+}
+
+/// Per-field token counts of one document, for BM25F length normalisation.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FieldLengths {
+    /// Tokens in the title.
+    pub title: u32,
+    /// Tokens in the headings.
+    pub headings: u32,
+    /// Tokens in the body.
+    pub body: u32,
+    /// Tokens in the anchors.
+    pub anchors: u32,
+    /// Tokens in the URL.
+    pub url: u32,
+    /// Tokens in the alt text.
+    pub alt: u32,
+}
+
+/// Corpus-wide average field lengths, for BM25F length normalisation.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+pub struct AvgFieldLengths {
+    /// Average title length, in tokens.
+    pub title: f32,
+    /// Average headings length, in tokens.
+    pub headings: f32,
+    /// Average body length, in tokens.
+    pub body: f32,
+    /// Average anchors length, in tokens.
+    pub anchors: f32,
+    /// Average URL length, in tokens.
+    pub url: f32,
+    /// Average alt-text length, in tokens.
+    pub alt: f32,
+}
+
+/// Corpus-wide statistics a single candidate cannot carry.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+pub struct CollectionStats {
+    /// Number of documents in the generation.
+    pub doc_count: u64,
+    /// Average field lengths.
+    pub avg: AvgFieldLengths,
+}
+
+impl CollectionStats {
+    /// Compute corpus averages from per-document field lengths.
+    ///
+    /// Shared by readers so their BM25F inputs cannot drift.
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)] // token counts fit f32 exactly
+    #[allow(clippy::cast_possible_truncation)] // an average length barely spans f32's range
+    pub fn from_field_lengths(lengths: impl IntoIterator<Item = FieldLengths>) -> Self {
+        let mut sums = [0f64; 6];
+        let mut n: u64 = 0;
+        for l in lengths {
+            sums[0] += f64::from(l.title);
+            sums[1] += f64::from(l.headings);
+            sums[2] += f64::from(l.body);
+            sums[3] += f64::from(l.anchors);
+            sums[4] += f64::from(l.url);
+            sums[5] += f64::from(l.alt);
+            n += 1;
+        }
+        if n == 0 {
+            return Self::default();
+        }
+        let nf = n as f32;
+        Self {
+            doc_count: n,
+            avg: AvgFieldLengths {
+                title: sums[0] as f32 / nf,
+                headings: sums[1] as f32 / nf,
+                body: sums[2] as f32 / nf,
+                anchors: sums[3] as f32 / nf,
+                url: sums[4] as f32 / nf,
+                alt: sums[5] as f32 / nf,
+            },
+        }
+    }
+}
+
 /// A candidate document returned by retrieval, before ranking.
 ///
 /// It carries the stored fields needed to render a result and every fast field the ranker
-/// reads, so ranking never needs a second document fetch.
+/// reads, so ranking never needs a second document fetch. It also carries the raw
+/// per-term, per-field frequencies and its own field lengths, so BM25F can be computed
+/// without revisiting the index.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Candidate {
     /// Document identity.
@@ -166,10 +263,14 @@ pub struct Candidate {
     pub link_count: u32,
     /// Duplicate cluster id.
     pub cluster_id: u64,
-    /// Lexical relevance score from the reader (BM25F).
+    /// Lexical relevance score from the reader (engine BM25; the ranker recomputes BM25F).
     pub bm25: f32,
-    /// Per-field match counts.
+    /// Per-field match counts, aggregated across the query terms.
     pub field_hits: FieldHits,
+    /// Per-field token counts of this document.
+    pub field_lengths: FieldLengths,
+    /// Per-term, per-field frequencies for the query terms.
+    pub terms: Vec<TermFrequency>,
 }
 
 /// Metadata for a single document, for the `documents/{id}` endpoint.
@@ -231,6 +332,12 @@ pub struct Explanation {
 pub trait SearchIndexReader: Send + Sync {
     /// The generation this reader serves.
     fn generation(&self) -> IndexGeneration;
+
+    /// Corpus-wide statistics for BM25F. Immutable for the life of a generation.
+    ///
+    /// # Errors
+    /// Returns [`IndexError`] when the index cannot be read.
+    fn collection_stats(&self) -> Result<CollectionStats>;
 
     /// Retrieve candidates matching `plan`, best-first by lexical score.
     ///

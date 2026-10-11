@@ -11,8 +11,9 @@ use lynx_query::QueryPlan;
 use time::OffsetDateTime;
 
 use crate::reader::{
-    passes_filters, Candidate, DocId, DocumentMetadata, Explanation, FieldHits, FieldWeights,
-    IndexGeneration, Result, SearchIndexReader, SearchOptions, TermExplanation,
+    passes_filters, Candidate, CollectionStats, DocId, DocumentMetadata, Explanation, FieldHits,
+    FieldLengths, FieldWeights, IndexGeneration, Result, SearchIndexReader, SearchOptions,
+    TermExplanation, TermFrequency,
 };
 use crate::tokenizer::term_frequencies;
 
@@ -118,6 +119,7 @@ struct StoredDoc {
     all_terms: BTreeSet<String>,
     phrase_haystack: String,
     content_length: u32,
+    field_lengths: FieldLengths,
 }
 
 impl StoredDoc {
@@ -153,6 +155,16 @@ impl StoredDoc {
         .join(" ");
         let content_length = u32::try_from(doc.body.len()).unwrap_or(u32::MAX);
 
+        // A field's token count is the sum of its term frequencies.
+        let field_lengths = FieldLengths {
+            title: sum_counts(&title_tf),
+            headings: sum_counts(&headings_tf),
+            body: sum_counts(&body_tf),
+            anchors: sum_counts(&anchors_tf),
+            url: sum_counts(&url_tf),
+            alt: sum_counts(&alt_tf),
+        };
+
         Self {
             doc,
             title_tf,
@@ -164,8 +176,14 @@ impl StoredDoc {
             all_terms,
             phrase_haystack,
             content_length,
+            field_lengths,
         }
     }
+}
+
+/// Sum a term-frequency map to get a field's token count.
+fn sum_counts(tf: &BTreeMap<String, u32>) -> u32 {
+    tf.values().copied().sum()
 }
 
 /// The in-memory index.
@@ -275,6 +293,46 @@ impl InMemoryIndex {
         // No positive clause and no filter is a match-all (used by counts).
         Some((score, hits))
     }
+
+    /// Number of documents containing `term` in any field.
+    fn document_frequency(&self, term: &str) -> u64 {
+        let n = self
+            .docs
+            .iter()
+            .filter(|s| s.all_terms.contains(term))
+            .count();
+        u64::try_from(n).unwrap_or(u64::MAX)
+    }
+
+    /// The per-term, per-field frequencies the ranker needs, for the terms of `plan` that
+    /// this document actually contains.
+    fn term_frequencies_for(&self, stored: &StoredDoc, plan: &QueryPlan) -> Vec<TermFrequency> {
+        let mut seen = BTreeSet::new();
+        let mut out = Vec::new();
+        for term in plan.must.iter().chain(&plan.should) {
+            let t = term.text();
+            if !seen.insert(t.to_string()) {
+                continue;
+            }
+            let tf = FieldHits {
+                title: *stored.title_tf.get(t).unwrap_or(&0),
+                headings: *stored.headings_tf.get(t).unwrap_or(&0),
+                body: *stored.body_tf.get(t).unwrap_or(&0),
+                anchors: *stored.anchors_tf.get(t).unwrap_or(&0),
+                url: *stored.url_tf.get(t).unwrap_or(&0),
+                alt: *stored.alt_tf.get(t).unwrap_or(&0),
+            };
+            if tf == FieldHits::default() {
+                continue;
+            }
+            out.push(TermFrequency {
+                term: t.to_string(),
+                df: self.document_frequency(t),
+                tf,
+            });
+        }
+        out
+    }
 }
 
 impl Default for InMemoryIndex {
@@ -284,6 +342,39 @@ impl Default for InMemoryIndex {
 }
 
 /// Accumulate a term's weighted contribution across fields.
+#[allow(clippy::cast_precision_loss)] // term frequencies are tiny; f32 precision is ample
+#[allow(clippy::too_many_arguments)] // one value type per argument keeps the call site flat
+fn candidate_of(
+    stored: &StoredDoc,
+    bm25: f32,
+    field_hits: FieldHits,
+    terms: Vec<TermFrequency>,
+) -> Candidate {
+    let d = &stored.doc;
+    Candidate {
+        doc_id: d.doc_id,
+        url: d.url.clone(),
+        title: d.title.clone(),
+        body: d.body.clone(),
+        lang: d.lang.clone(),
+        content_type: d.content_type.clone(),
+        published_at: d.published_at,
+        modified_at: d.modified_at,
+        crawled_at: d.crawled_at,
+        quality_score: d.quality_score,
+        spam_score: d.spam_score,
+        host_rank: d.host_rank,
+        domain_rank: d.domain_rank,
+        content_length: stored.content_length,
+        link_count: d.link_count,
+        cluster_id: d.cluster_id,
+        bm25,
+        field_hits,
+        field_lengths: stored.field_lengths,
+        terms,
+    }
+}
+
 #[allow(clippy::cast_precision_loss)] // term frequencies are tiny; f32 precision is ample
 fn accumulate(term: &str, stored: &StoredDoc, w: &FieldWeights, hits: &mut FieldHits) -> f32 {
     let mut score = 0.0;
@@ -318,6 +409,12 @@ impl SearchIndexReader for InMemoryIndex {
         self.generation.clone()
     }
 
+    fn collection_stats(&self) -> Result<CollectionStats> {
+        Ok(CollectionStats::from_field_lengths(
+            self.docs.iter().map(|d| d.field_lengths),
+        ))
+    }
+
     fn search(&self, plan: &QueryPlan, opts: &SearchOptions) -> Result<Vec<Candidate>> {
         let mut scored: Vec<(f32, FieldHits, &StoredDoc)> = self
             .docs
@@ -334,7 +431,10 @@ impl SearchIndexReader for InMemoryIndex {
             .into_iter()
             .skip(opts.offset)
             .take(opts.limit)
-            .map(|(score, hits, stored)| candidate_of(stored, score, hits))
+            .map(|(score, hits, stored)| {
+                let terms = self.term_frequencies_for(stored, plan);
+                candidate_of(stored, score, hits, terms)
+            })
             .collect())
     }
 
@@ -406,29 +506,5 @@ impl SearchIndexReader for InMemoryIndex {
             bm25: total,
             terms,
         })
-    }
-}
-
-fn candidate_of(stored: &StoredDoc, bm25: f32, field_hits: FieldHits) -> Candidate {
-    let d = &stored.doc;
-    Candidate {
-        doc_id: d.doc_id,
-        url: d.url.clone(),
-        title: d.title.clone(),
-        body: d.body.clone(),
-        lang: d.lang.clone(),
-        content_type: d.content_type.clone(),
-        published_at: d.published_at,
-        modified_at: d.modified_at,
-        crawled_at: d.crawled_at,
-        quality_score: d.quality_score,
-        spam_score: d.spam_score,
-        host_rank: d.host_rank,
-        domain_rank: d.domain_rank,
-        content_length: stored.content_length,
-        link_count: d.link_count,
-        cluster_id: d.cluster_id,
-        bm25,
-        field_hits,
     }
 }

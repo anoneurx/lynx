@@ -5,7 +5,12 @@
 //! the `SearchIndexReader` boundary.
 
 #![cfg(feature = "tantivy")]
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::cast_possible_truncation
+)]
 
 use lynx_common::ids::DocumentId;
 use lynx_indexer::{
@@ -194,6 +199,35 @@ fn empty_query_matches_everything() {
     let index = sample();
     let plan: QueryPlan = parse("");
     assert_eq!(index.count(&plan).unwrap(), 4);
+}
+
+#[test]
+fn collection_stats_report_corpus_size_and_field_lengths() {
+    let index = sample();
+    let stats = index.collection_stats().unwrap();
+    assert_eq!(stats.doc_count, 4);
+    assert!(stats.avg.body > 0.0);
+    assert!(stats.avg.title > 0.0);
+}
+
+#[test]
+fn candidates_carry_per_field_frequencies_and_lengths() {
+    let index = sample();
+    let hits = search(&index, "runtime");
+    assert_eq!(hits.len(), 1);
+    let c = &hits[0];
+    let runtime = c
+        .terms
+        .iter()
+        .find(|t| t.term == "runtime")
+        .expect("runtime term present");
+    assert_eq!(runtime.df, 1);
+    assert_eq!(runtime.tf.title, 1);
+    assert_eq!(runtime.tf.body, 1);
+    assert_eq!(
+        c.field_lengths.title,
+        c.title.split_whitespace().count() as u32
+    );
 }
 
 fn parsed(url: &str, title: &str, body: &str) -> ParsedDocument {

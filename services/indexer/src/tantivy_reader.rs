@@ -7,19 +7,20 @@
 use std::path::Path;
 
 use lynx_query::QueryPlan;
-use tantivy::collector::TopDocs;
+use tantivy::collector::{Count, TopDocs};
 use tantivy::query::{AllQuery, BooleanQuery, Occur, PhraseQuery, Query, TermQuery};
 use tantivy::schema::document::Value as _;
 use tantivy::schema::{
     Field, IndexRecordOption, Schema, TantivyDocument, Term, STORED, STRING, TEXT,
 };
-use tantivy::{Index, IndexReader};
+use tantivy::{Index, IndexReader, Searcher};
 use time::OffsetDateTime;
 
 use crate::memory::IndexedDocument;
 use crate::reader::{
-    passes_filters, Candidate, DocId, DocumentMetadata, Explanation, FieldHits, FieldWeights,
-    IndexError, IndexGeneration, Result, SearchIndexReader, SearchOptions, TermExplanation,
+    passes_filters, Candidate, CollectionStats, DocId, DocumentMetadata, Explanation, FieldHits,
+    FieldLengths, FieldWeights, IndexError, IndexGeneration, Result, SearchIndexReader,
+    SearchOptions, TermExplanation, TermFrequency,
 };
 use crate::tokenizer::tokenize;
 
@@ -461,11 +462,80 @@ fn field_hits_and_terms(
     (hits, terms, total)
 }
 
+/// Token count of a field's stored text.
+fn count_tokens(text: &str) -> u32 {
+    u32::try_from(tokenize(text).len()).unwrap_or(u32::MAX)
+}
+
+/// Per-field token counts of a document.
+fn field_lengths_of(doc: &TantivyDocument, fields: &Fields) -> FieldLengths {
+    FieldLengths {
+        title: count_tokens(&text_of(doc, fields.title)),
+        headings: count_tokens(&text_of(doc, fields.headings)),
+        body: count_tokens(&text_of(doc, fields.body)),
+        anchors: count_tokens(&text_of(doc, fields.anchors)),
+        url: count_tokens(&text_of(doc, fields.url)),
+        alt: count_tokens(&text_of(doc, fields.alt)),
+    }
+}
+
+/// Document frequency of `token` across all text fields.
+fn document_frequency(searcher: &Searcher, text_fields: &[Field], token: &str) -> u64 {
+    let Some(q) = any_field_query(text_fields, std::slice::from_ref(&token.to_string())) else {
+        return 0;
+    };
+    searcher
+        .search(q.as_ref(), &Count)
+        .map_or(0, |n| u64::try_from(n).unwrap_or(u64::MAX))
+}
+
+/// The per-term, per-field frequencies the ranker needs, for the terms present in `doc`.
+fn term_frequencies_for(
+    searcher: &Searcher,
+    fields: &Fields,
+    doc: &TantivyDocument,
+    tokens: &[String],
+) -> Vec<TermFrequency> {
+    let text_fields = fields.text();
+    let mut seen = std::collections::BTreeSet::new();
+    let mut out = Vec::new();
+    for token in tokens {
+        if !seen.insert(token.clone()) {
+            continue;
+        }
+        let tf = FieldHits {
+            title: count_token(&text_of(doc, fields.title), token),
+            headings: count_token(&text_of(doc, fields.headings), token),
+            body: count_token(&text_of(doc, fields.body), token),
+            anchors: count_token(&text_of(doc, fields.anchors), token),
+            url: count_token(&text_of(doc, fields.url), token),
+            alt: count_token(&text_of(doc, fields.alt), token),
+        };
+        if tf == FieldHits::default() {
+            continue;
+        }
+        out.push(TermFrequency {
+            term: token.clone(),
+            df: document_frequency(searcher, &text_fields, token),
+            tf,
+        });
+    }
+    out
+}
+
+/// Count a token's occurrences in `text`.
+fn count_token(text: &str, token: &str) -> u32 {
+    u32::try_from(tokenize(text).iter().filter(|t| *t == token).count()).unwrap_or(u32::MAX)
+}
+
+#[allow(clippy::too_many_arguments)] // one value type per argument keeps the call site flat
 fn candidate_of(
     doc: &TantivyDocument,
     fields: &Fields,
     bm25: f32,
     field_hits: FieldHits,
+    field_lengths: FieldLengths,
+    terms: Vec<TermFrequency>,
 ) -> Result<Candidate> {
     let doc_id = text_of(doc, fields.doc_id)
         .parse()
@@ -489,6 +559,8 @@ fn candidate_of(
         cluster_id: u64_of(doc, fields.cluster_id),
         bm25,
         field_hits,
+        field_lengths,
+        terms,
     })
 }
 
@@ -498,6 +570,21 @@ const SCAN_LIMIT: usize = 100_000;
 impl SearchIndexReader for TantivyIndexReader {
     fn generation(&self) -> IndexGeneration {
         self.generation.clone()
+    }
+
+    fn collection_stats(&self) -> Result<CollectionStats> {
+        let searcher = self.reader.searcher();
+        let top = searcher
+            .search(&AllQuery, &TopDocs::with_limit(SCAN_LIMIT))
+            .map_err(|e| IndexError::Internal(e.to_string()))?;
+        let mut lengths = Vec::with_capacity(top.len());
+        for (_, address) in top {
+            let doc: TantivyDocument = searcher
+                .doc(address)
+                .map_err(|e| IndexError::Corrupt(e.to_string()))?;
+            lengths.push(field_lengths_of(&doc, &self.fields));
+        }
+        Ok(CollectionStats::from_field_lengths(lengths))
     }
 
     fn search(&self, plan: &QueryPlan, opts: &SearchOptions) -> Result<Vec<Candidate>> {
@@ -538,7 +625,16 @@ impl SearchIndexReader for TantivyIndexReader {
             }
             let (hits, _terms, _standin) =
                 field_hits_and_terms(&doc, &self.fields, &tokens, &opts.weights);
-            out.push(candidate_of(&doc, &self.fields, score, hits)?);
+            let field_lengths = field_lengths_of(&doc, &self.fields);
+            let terms = term_frequencies_for(&searcher, &self.fields, &doc, &tokens);
+            out.push(candidate_of(
+                &doc,
+                &self.fields,
+                score,
+                hits,
+                field_lengths,
+                terms,
+            )?);
         }
 
         Ok(out.into_iter().skip(opts.offset).take(opts.limit).collect())

@@ -28,8 +28,9 @@ pub use tantivy_reader::TantivyIndexReader;
 pub use build::{AddOutcome, GenerationBuilder, RANKING_CONFIG_VERSION, TOKENIZER_VERSION};
 pub use memory::{InMemoryIndex, IndexedDocument};
 pub use reader::{
-    passes_filters, Candidate, DocId, DocumentMetadata, Explanation, FieldHits, FieldWeights,
-    IndexError, IndexGeneration, SearchIndexReader, SearchOptions, TermExplanation,
+    passes_filters, AvgFieldLengths, Candidate, CollectionStats, DocId, DocumentMetadata,
+    Explanation, FieldHits, FieldLengths, FieldWeights, IndexError, IndexGeneration,
+    SearchIndexReader, SearchOptions, TermExplanation, TermFrequency,
 };
 
 /// The service name, used in logs and metrics.

@@ -858,8 +858,13 @@ name = "lynx-ranker"
 version = "0.1.0"
 dependencies = [
  "lynx-common",
+ "lynx-indexer",
  "lynx-models",
+ "lynx-query",
  "pretty_assertions",
+ "proptest",
+ "serde",
+ "time",
 ]
 
 [[package]]
