@@ -16,6 +16,11 @@ trait SearchIndexReader: Send + Sync {
 }
 ```
 
+The trait and its value types live in `lynx-indexer::reader`. They import no index-engine
+type, so consumers depend on a Tantivy-free boundary; the Tantivy-backed implementation is
+compiled only under `lynx-indexer`'s `tantivy` feature. The in-memory
+`lynx-indexer::memory::InMemoryIndex` is the reference implementation used in tests.
+
 Nothing in `apps/api` or `services/ranker` imports a Tantivy type. This is what makes the
 index swappable — to Lucene, OpenSearch, or a custom implementation — without rewriting the
 API or the ranker. See [ADR-0002](../adr/0002-search-index.md).

@@ -114,3 +114,5 @@ lynx-models = { path = "packages/models" }
 lynx-config = { path = "packages/config" }
 lynx-logging = { path = "packages/logging" }
 lynx-security = { path = "packages/security" }
+lynx-query = { path = "services/query" }
+lynx-indexer = { path = "services/indexer" }

@@ -1,6 +1,6 @@
 [package]
 name = "lynx-indexer"
-description = "Builds Tantivy index generations from ParsedDocuments."
+description = "Index generations and the readable index abstraction (SearchIndexReader)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,9 +8,21 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 
+[features]
+default = []
+# The real Tantivy-backed reader. Off by default so consumers and tests never need the
+# engine in the loop.
+tantivy = ["dep:tantivy"]
+
 [dependencies]
-lynx-common.workspace = true
+lynx-common = { workspace = true, features = ["serde"] }
 lynx-models.workspace = true
+lynx-query.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+time.workspace = true
+url.workspace = true
+tantivy = { workspace = true, optional = true }
 
 [dev-dependencies]
 pretty_assertions.workspace = true
