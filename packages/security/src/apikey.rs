@@ -53,13 +53,11 @@ pub fn generate() -> NewApiKey {
 pub fn generate_with<R: RngCore>(rng: &mut R) -> NewApiKey {
     let mut secret = [0u8; SECRET_BYTES];
     rng.fill_bytes(&mut secret);
-    let mut id_bytes = [0u8; 6];
+    let mut id_bytes = [0u8; PUBLIC_ID_LEN / 2];
     rng.fill_bytes(&mut id_bytes);
-    let public_id = base64::engine::general_purpose::URL_SAFE_NO_PAD
-        .encode(id_bytes)
-        .chars()
-        .take(PUBLIC_ID_LEN)
-        .collect::<String>();
+    // Hex, not base64url: the public id is embedded in a `_`-delimited key, so its
+    // alphabet must not contain `_`.
+    let public_id = hex::encode(id_bytes);
     let secret_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(secret);
     NewApiKey {
         key: format!("lynx_{public_id}_{secret_b64}"),
@@ -111,6 +109,18 @@ mod tests {
         assert_eq!(id, k.public_id);
         assert!(!secret.is_empty());
         assert!(verify(&k.key, &k.hash));
+    }
+
+    #[test]
+    fn every_generated_key_splits_and_verifies() {
+        // Regression: a base64url public id could contain `_` and break `split`.
+        for _ in 0..1000 {
+            let k = generate();
+            let (id, secret) = split(&k.key).expect("generated key must split");
+            assert_eq!(id.len(), PUBLIC_ID_LEN);
+            assert!(!secret.is_empty());
+            assert!(verify(&k.key, &k.hash));
+        }
     }
 
     #[test]
