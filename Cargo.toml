@@ -115,4 +115,5 @@ lynx-config = { path = "packages/config" }
 lynx-logging = { path = "packages/logging" }
 lynx-security = { path = "packages/security" }
 lynx-query = { path = "services/query" }
+lynx-ranker = { path = "services/ranker" }
 lynx-indexer = { path = "services/indexer" }

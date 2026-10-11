@@ -1,0 +1,20 @@
+//! Application state.
+
+use std::sync::Arc;
+
+use lynx_common::time::Clock;
+use lynx_indexer::SearchIndexReader;
+use lynx_ranker::Ranker;
+
+#[derive(Clone)]
+pub struct AppState {
+    pub reader: Arc<dyn SearchIndexReader>,
+    pub ranker: Ranker,
+    pub clock: Option<Arc<dyn Clock>>,
+}
+
+impl std::fmt::Debug for AppState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AppState").finish_non_exhaustive()
+    }
+}

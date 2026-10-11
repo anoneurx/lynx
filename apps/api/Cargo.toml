@@ -13,8 +13,18 @@ lynx-common.workspace = true
 lynx-models.workspace = true
 lynx-config.workspace = true
 lynx-logging.workspace = true
-lynx-query = { path = "../../services/query" }
+lynx-query.workspace = true
+lynx-ranker.workspace = true
+lynx-indexer.workspace = true
 tracing.workspace = true
+tokio.workspace = true
+axum.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+time.workspace = true
+thiserror.workspace = true
 
 [lints]
 workspace = true
