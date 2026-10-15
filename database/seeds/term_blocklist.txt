@@ -1,0 +1,13 @@
+# Terms excluded from suggestions and de-prioritised by ranking policy.
+#
+# One term per line, matched case-insensitively after normalisation. `#` begins a
+# comment. This list is editorial and reviewed like ranking config
+# (docs/ranking/spam.md).
+#
+# It is a policy list, not an obscenity filter: terms that would otherwise let a
+# query or a suggestion surface spam, a doorway brand, or a known abuse pattern.
+#
+# The entries below are illustrative placeholders only.
+#
+# example-brand-spam
+# free-money-now

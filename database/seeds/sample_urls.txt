@@ -1,0 +1,16 @@
+# A small, stable, hand-reviewed URL set for integration tests.
+#
+# `#` begins a comment. This is a seed (~50 URLs is the ceiling), not a crawl.
+# CI MUST NOT fetch these URLs. Integration tests run against a local fixture
+# origin server so the suite is hermetic and non-abusive.
+#
+# The set is chosen to exercise the interesting cases: a canonical page, a
+# duplicate that differs only by a tracking parameter, a redirect, and a trap.
+
+https://www.example.com/
+https://www.example.com/about
+https://www.example.com/docs/getting-started
+https://www.example.com/docs/getting-started?utm_source=newsletter
+https://www.example.com/redirect
+https://www.example.com/trap?page=1
+https://www.iana.org/help/example-domains

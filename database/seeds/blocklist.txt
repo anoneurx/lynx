@@ -1,0 +1,18 @@
+# Domains and hosts excluded from crawling.
+#
+# One registrable domain or host per line. `#` begins a comment. Blank lines are
+# ignored. `*.` matches every subdomain.
+#
+# Editorial content: goes through the same review as ranking config
+# (docs/ranking/spam.md). Reasons belong in the commit message, not the file.
+#
+# Rationale for the list: self-promotion, personal sites, and NSFW policy. This is
+# a *policy* blocklist, not a malware list; the fetch safety gate handles the
+# latter independently.
+#
+# The entries below are illustrative and intentionally commented out so the
+# default seed set is inert.
+#
+# self-promo-vendor.example
+# personal-blog.example
+# *.nsfw.example

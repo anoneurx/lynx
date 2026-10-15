@@ -6,8 +6,8 @@ Automation that is not part of a test suite or a build.
 | ------ | ------- |
 | `bootstrap.sh` | one-command toolchain setup (rustup pinned toolchain, pnpm via corepack, sqlx-cli, cargo-nextest, cargo-fuzz) |
 | `dev.sh` | start/stop/status the local stack with hot reload for the web app |
-| `db-migrate.sh` | thin wrapper over `sqlx migrate` with status and checksum verification |
-| `db-seed.sh` | idempotent local seeding |
+| `db-migrate.sh` | wrapper over the `lynx-db` runner (up/status/new/reset), single `schema_migrations` ledger |
+| `db-seed.sh` | idempotent local seeding (`lynx-db seed`) |
 | `index-build.sh` | build a local index from a seed set for development |
 | `crawl-fixture.sh` | run the crawler against the local fixture origin server only |
 | `check-links.sh` | markdown link checker across `docs/` and root docs |

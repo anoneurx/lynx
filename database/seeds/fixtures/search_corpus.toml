@@ -1,0 +1,26 @@
+# Deterministic documents for ranking and search tests.
+#
+# Every field is synthetic. The indexer and ranker read this file so a golden-file
+# test yields the same ranked order on every machine (database/seeds/README.md,
+# rule 3). Do not add crawled content here.
+
+[[documents]]
+canonical = "https://www.example.com/"
+title     = "Example Domain"
+body      = "This domain is for use in illustrative examples in documents."
+lang      = "en"
+published = "2024-01-01T00:00:00Z"
+
+[[documents]]
+canonical = "https://www.example.com/docs/rust"
+title     = "Rust systems programming"
+body      = "Rust is a systems programming language focused on safety and performance."
+lang      = "en"
+published = "2024-06-01T00:00:00Z"
+
+[[documents]]
+canonical = "https://www.example.com/docs/tokio"
+title     = "Tokio async runtime"
+body      = "Tokio is an asynchronous runtime for Rust with a multi-threaded scheduler."
+lang      = "en"
+published = "2024-05-01T00:00:00Z"

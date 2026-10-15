@@ -1,0 +1,18 @@
+# Allowed seed domains and per-domain crawl-budget overrides.
+#
+# The development seed scope is deliberately tiny and hand-reviewed. It is a seed,
+# not a crawl of the live web; CI never fetches from it. See database/seeds/README.md.
+
+[defaults]
+pages_per_day  = 500
+bytes_per_day  = "1GiB"
+
+# `example.com` and friends are reserved by RFC 2606 for documentation and tests.
+[[domains]]
+name          = "example.com"
+note          = "reserved for illustrative use; safe synthetic target"
+pages_per_day = 100
+
+[[domains]]
+name          = "iana.org"
+note          = "documentation host; robots.txt permits test crawling"

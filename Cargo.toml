@@ -22,6 +22,7 @@ members = [
   "services/frontier",
   "services/parser",
   "services/indexer",
+  "services/storage",
   "services/crawler",
   "services/ai",
 
@@ -80,7 +81,7 @@ secrecy = "0.8"
 zeroize = "1"
 
 # data
-sqlx = { version = "0.7", features = ["postgres", "runtime-tokio", "macros"] }
+sqlx = { version = "0.7", features = ["postgres", "runtime-tokio", "macros", "json", "time", "uuid"] }
 tantivy = "0.22"
 
 # networking / text
@@ -117,3 +118,4 @@ lynx-security = { path = "packages/security" }
 lynx-query = { path = "services/query" }
 lynx-ranker = { path = "services/ranker" }
 lynx-indexer = { path = "services/indexer" }
+lynx-storage = { path = "services/storage" }
