@@ -8,6 +8,9 @@
 //! - [`memory`] — an in-memory reference reader used by tests.
 //! - [`build`] — [`GenerationBuilder`](build::GenerationBuilder), the engine-agnostic
 //!   indexer that seals parsed documents into an immutable generation.
+//! - [`pipeline`] — [`IndexPipeline`](pipeline::IndexPipeline), which records a document
+//!   version and its edges through a [`DocumentStore`](pipeline::DocumentStore) and then
+//!   offers the document to the generation.
 //!
 //! A Tantivy-backed reader *and writer* are available behind the `tantivy` feature.
 
@@ -16,6 +19,7 @@
 
 pub mod build;
 pub mod memory;
+pub mod pipeline;
 pub mod reader;
 pub mod tokenizer;
 
@@ -27,6 +31,10 @@ pub use tantivy_reader::TantivyIndexReader;
 
 pub use build::{AddOutcome, GenerationBuilder, RANKING_CONFIG_VERSION, TOKENIZER_VERSION};
 pub use memory::{InMemoryIndex, IndexedDocument};
+pub use pipeline::{
+    DocumentStore, DocumentVersion, IndexPipeline, IngestOutcome, LinkEdge, MemoryDocumentStore,
+    VersionRecord,
+};
 pub use reader::{
     passes_filters, AvgFieldLengths, Candidate, CollectionStats, DocId, DocumentMetadata,
     Explanation, FieldHits, FieldLengths, FieldWeights, IndexError, IndexGeneration,

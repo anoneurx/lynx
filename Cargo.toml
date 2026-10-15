@@ -122,6 +122,7 @@ lynx-security = { path = "packages/security" }
 lynx-query = { path = "services/query" }
 lynx-ranker = { path = "services/ranker" }
 lynx-indexer = { path = "services/indexer" }
+lynx-parser = { path = "services/parser" }
 lynx-storage = { path = "services/storage" }
 lynx-frontier = { path = "services/frontier" }
 lynx-crawler = { path = "services/crawler" }

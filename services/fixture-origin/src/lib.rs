@@ -43,6 +43,7 @@ pub fn router() -> Router {
         .route("/robots.txt", get(default_robots))
         .route("/robots/:variant", get(robots_variant))
         .route("/page/:id", get(page))
+        .route("/articles/:slug", get(article))
         .route("/status/:code", get(status))
         .route("/redirect/private", get(redirect_private))
         .route("/huge", get(huge))
@@ -115,6 +116,47 @@ async fn page(Path(id): Path<String>) -> Response {
          <body><h1>{safe}</h1><a href=\"/page/next\">next</a></body></html>"
     );
     html(&body)
+}
+
+/// Canned article pages used by the pipeline integration test: a linked pair with rich
+/// metadata, and a `noindex` draft. Relative links exercise base resolution.
+async fn article(Path(slug): Path<String>) -> Response {
+    let body = match slug.as_str() {
+        "rust-async" => {
+            "<!doctype html><html lang=\"en\"><head>\
+             <title>Rust Async Guide</title>\
+             <meta name=\"description\" content=\"A guide to asynchronous Rust.\">\
+             <meta property=\"article:published_time\" content=\"2026-02-18T09:00:00Z\">\
+             <link rel=\"canonical\" href=\"/articles/rust-async\">\
+             </head><body>\
+             <nav>Home Documentation Community</nav>\
+             <main><h1>Rust Async Guide</h1>\
+             <p>Concurrency without threads is the point of the async model.</p>\
+             <h2>Scheduling</h2>\
+             <p>The executor polls futures and parks the thread while waiting.</p>\
+             <a href=\"../articles/tokio-runtime\">Tokio asynchronous runtime</a>\
+             <a href=\"https://example.org/docs\">external reference</a>\
+             </main>\
+             <footer>Copyright the fixture</footer></body></html>"
+        }
+        "tokio-runtime" => {
+            "<!doctype html><html lang=\"en\"><head>\
+             <title>Tokio Runtime</title>\
+             <link rel=\"canonical\" href=\"/articles/tokio-runtime\">\
+             </head><body>\
+             <main><h1>Tokio Runtime</h1>\
+             <p>Tokio is an asynchronous runtime providing an event loop and a task scheduler.</p>\
+             </main></body></html>"
+        }
+        "noindex-draft" => {
+            "<!doctype html><html lang=\"en\"><head>\
+             <title>Unpublished Draft</title>\
+             <meta name=\"robots\" content=\"noindex\">\
+             </head><body><main><p>secret unpublished quokka notes</p></main></body></html>"
+        }
+        _ => return (StatusCode::NOT_FOUND, "unknown article\n").into_response(),
+    };
+    html(body)
 }
 
 async fn status(Path(code): Path<u16>) -> Response {

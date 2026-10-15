@@ -240,6 +240,7 @@ fn parsed(url: &str, title: &str, body: &str) -> ParsedDocument {
         links: Vec::new(),
         lang: Some("en".to_string()),
         content_hash: format!("h-{url}"),
+        ..ParsedDocument::default()
     }
 }
 

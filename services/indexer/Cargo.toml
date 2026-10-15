@@ -28,6 +28,7 @@ tantivy = { workspace = true, optional = true }
 [dev-dependencies]
 pretty_assertions.workspace = true
 tempfile.workspace = true
+tokio.workspace = true
 
 [lints]
 workspace = true

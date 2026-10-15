@@ -113,6 +113,14 @@ impl GenerationBuilder {
     pub fn add(&mut self, parsed: ParsedDocument) -> AddOutcome {
         let doc_id = DocumentId::from_canonical_url(&parsed.canonical);
 
+        if parsed.noindex {
+            // The document asked not to be indexed. Honor it and drop any previously
+            // indexed version so the live index matches the site's current instruction.
+            self.hashes.remove(&doc_id);
+            self.docs.retain(|d| d.doc_id != doc_id);
+            return AddOutcome::Rejected("noindex");
+        }
+
         if self.hashes.get(&doc_id) == Some(&parsed.content_hash) {
             return AddOutcome::Unchanged;
         }
@@ -211,18 +219,18 @@ fn to_indexed_document(doc_id: DocumentId, parsed: &ParsedDocument) -> Option<In
         headings,
         body,
         anchors,
-        alt: String::new(),
+        alt: display(&parsed.alt),
         lang,
         content_type: None,
-        published_at: None,
-        modified_at: None,
+        published_at: parsed.published_at,
+        modified_at: parsed.modified_at,
         crawled_at: None,
         quality_score: 0.5,
         spam_score: 0.0,
         host_rank: 0.0,
         domain_rank: 0.0,
         link_count: u32::try_from(parsed.links.len()).unwrap_or(u32::MAX),
-        cluster_id: 0,
+        cluster_id: parsed.simhash,
         ranking_config_version: RANKING_CONFIG_VERSION.to_string(),
     })
 }

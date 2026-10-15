@@ -92,24 +92,44 @@ pub struct Link {
 }
 
 /// The parser → indexer contract: a bounded, sanitised document ready to index.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// Every field is owned and bounded: no raw markup, no script text, no blob survives
+/// extraction, so the hostile input buffer can be dropped as soon as parsing returns.
+/// Defaulted so tests and callers can populate only the fields they exercise; new
+/// optional signals can be added without breaking existing literals.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct ParsedDocument {
     /// Canonical URL.
     pub canonical: String,
     /// Title text.
     pub title: String,
-    /// Heading text, concatenated.
+    /// Heading text, one entry per heading.
     pub headings: Vec<String>,
     /// Body text, cleaned and bounded.
     pub body: String,
-    /// Anchor text pointing at this document, from inbound links.
+    /// Anchor text of the links this page carries, used to seed inbound anchors.
     pub anchors: Vec<String>,
-    /// Outbound links discovered on the page.
+    /// Outbound links discovered on the page, canonicalised and deduplicated.
     pub links: Vec<String>,
     /// Detected language tag.
     pub lang: Option<String>,
     /// Content hash of the source body.
     pub content_hash: String,
+    /// Meta description or Open Graph description, if any.
+    pub description: Option<String>,
+    /// Image alt text and captions.
+    pub alt: String,
+    /// Publication time, when a trusted source declared one.
+    pub published_at: Option<OffsetDateTime>,
+    /// Last modified time, when a trusted source declared one.
+    pub modified_at: Option<OffsetDateTime>,
+    /// The document asked not to be indexed (`<meta name=robots content=noindex>`).
+    pub noindex: bool,
+    /// A parser limit was hit and some text or link was dropped.
+    pub truncated: bool,
+    /// 64-bit shingled `SimHash` over the body, for near-duplicate candidate lookup.
+    pub simhash: u64,
 }
 
 /// Identifies which shards, tokenizer, and ranking config produced an index.
@@ -230,9 +250,25 @@ mod tests {
             links: vec!["https://e.com/a".into()],
             lang: None,
             content_hash: "deadbeef".into(),
+            description: Some("d".into()),
+            alt: "an image".into(),
+            published_at: Some(datetime!(2026-02-18 00:00 UTC)),
+            modified_at: None,
+            noindex: false,
+            truncated: true,
+            simhash: 42,
         };
         let json = serde_json::to_string(&doc).unwrap();
         let back: ParsedDocument = serde_json::from_str(&json).unwrap();
         assert_eq!(doc, back);
+    }
+
+    #[test]
+    fn parsed_document_defaults_deserialise_from_a_minimal_object() {
+        let doc: ParsedDocument =
+            serde_json::from_str(r#"{"canonical":"https://e.com/"}"#).unwrap();
+        assert_eq!(doc.canonical, "https://e.com/");
+        assert!(!doc.noindex);
+        assert_eq!(doc.simhash, 0);
     }
 }

@@ -9,8 +9,12 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
+html5ever = "0.39.0"
 lynx-common.workspace = true
 lynx-models.workspace = true
+serde_json.workspace = true
+time.workspace = true
+url.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true

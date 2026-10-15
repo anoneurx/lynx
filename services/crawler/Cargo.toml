@@ -26,6 +26,9 @@ proptest.workspace = true
 reqwest.workspace = true
 tokio.workspace = true
 lynx-fixture-origin.workspace = true
+lynx-indexer = { workspace = true, features = ["tantivy"] }
+lynx-parser.workspace = true
+lynx-query.workspace = true
 
 [lints]
 workspace = true

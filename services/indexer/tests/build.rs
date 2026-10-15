@@ -22,6 +22,7 @@ fn parsed(url: &str, title: &str, body: &str) -> ParsedDocument {
         links: Vec::new(),
         lang: Some("EN".to_string()),
         content_hash: format!("h-{url}"),
+        ..ParsedDocument::default()
     }
 }
 
@@ -49,6 +50,35 @@ fn maps_parsed_document_to_indexed_document() {
     assert_eq!(d.lang.as_deref(), Some("en"));
     assert_eq!(d.link_count, 2);
     assert_eq!(gen.doc_count, 1);
+}
+
+#[test]
+fn maps_the_new_parser_signals_onto_the_indexed_document() {
+    let mut b = GenerationBuilder::new(datetime!(2026-01-01 00:00 UTC));
+    let mut p = parsed("https://e.com/x", "T", "B");
+    p.alt = "a red fox".into();
+    p.published_at = Some(datetime!(2026-02-18 10:00 UTC));
+    p.modified_at = Some(datetime!(2026-02-19 11:00 UTC));
+    p.simhash = 0xDEAD_BEEF;
+    assert_eq!(b.add(p), AddOutcome::Indexed);
+
+    let (docs, _) = b.build(1);
+    let d = &docs[0];
+    assert_eq!(d.alt, "a red fox");
+    assert_eq!(d.published_at, Some(datetime!(2026-02-18 10:00 UTC)));
+    assert_eq!(d.modified_at, Some(datetime!(2026-02-19 11:00 UTC)));
+    assert_eq!(d.cluster_id, 0xDEAD_BEEF);
+}
+
+#[test]
+fn a_noindex_document_is_rejected_and_removes_any_stale_version() {
+    let mut b = GenerationBuilder::new(datetime!(2026-01-01 00:00 UTC));
+    b.add(parsed("https://e.com/x", "T", "B"));
+    let mut hidden = parsed("https://e.com/x", "T", "B");
+    hidden.content_hash = "h-2".to_string();
+    hidden.noindex = true;
+    assert_eq!(b.add(hidden), AddOutcome::Rejected("noindex"));
+    assert!(b.is_empty());
 }
 
 #[test]
