@@ -11,9 +11,13 @@ authors.workspace = true
 [dependencies]
 lynx-common.workspace = true
 lynx-models.workspace = true
+time.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true
+reqwest.workspace = true
+tokio.workspace = true
+lynx-fixture-origin.workspace = true
 
 [lints]
 workspace = true

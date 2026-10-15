@@ -1,0 +1,19 @@
+[package]
+name = "lynx-fixture-origin"
+description = "Local fixture origin HTTP server: robots.txt variants and canned pages for crawler tests."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+axum.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+tower.workspace = true
+
+[lints]
+workspace = true

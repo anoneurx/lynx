@@ -24,6 +24,7 @@ members = [
   "services/indexer",
   "services/storage",
   "services/crawler",
+  "services/fixture-origin",
   "services/ai",
 
   # applications
@@ -119,3 +120,6 @@ lynx-query = { path = "services/query" }
 lynx-ranker = { path = "services/ranker" }
 lynx-indexer = { path = "services/indexer" }
 lynx-storage = { path = "services/storage" }
+lynx-frontier = { path = "services/frontier" }
+lynx-crawler = { path = "services/crawler" }
+lynx-fixture-origin = { path = "services/fixture-origin" }
