@@ -290,6 +290,16 @@ impl InMemoryIndex {
             score += w.body;
         }
 
+        // intitle: a title-scoped requirement — every token must appear in the title, and
+        // it contributes the large title weight. It never requires the term in the body.
+        for value in &plan.filters.intitle {
+            let tokens = crate::tokenizer::tokenize(value);
+            if tokens.is_empty() {
+                continue;
+            }
+            score += intitle_contribution(&tokens, stored, w.title, &mut hits)?;
+        }
+
         // No positive clause and no filter is a match-all (used by counts).
         Some((score, hits))
     }
@@ -306,28 +316,39 @@ impl InMemoryIndex {
 
     /// The per-term, per-field frequencies the ranker needs, for the terms of `plan` that
     /// this document actually contains.
+    ///
+    /// Carries the negative (`must_not`) and `intitle:` terms as well: the negated ones so
+    /// the ranker can detect a penalty without a second lookup, and the `intitle:` ones so
+    /// their title hits reach BM25F.
     fn term_frequencies_for(&self, stored: &StoredDoc, plan: &QueryPlan) -> Vec<TermFrequency> {
+        let mut wanted: Vec<String> = Vec::new();
+        for term in plan.must.iter().chain(&plan.should).chain(&plan.must_not) {
+            wanted.push(term.text().to_string());
+        }
+        for value in &plan.filters.intitle {
+            wanted.extend(crate::tokenizer::tokenize(value));
+        }
+
         let mut seen = BTreeSet::new();
         let mut out = Vec::new();
-        for term in plan.must.iter().chain(&plan.should) {
-            let t = term.text();
-            if !seen.insert(t.to_string()) {
+        for t in wanted {
+            if !seen.insert(t.clone()) {
                 continue;
             }
             let tf = FieldHits {
-                title: *stored.title_tf.get(t).unwrap_or(&0),
-                headings: *stored.headings_tf.get(t).unwrap_or(&0),
-                body: *stored.body_tf.get(t).unwrap_or(&0),
-                anchors: *stored.anchors_tf.get(t).unwrap_or(&0),
-                url: *stored.url_tf.get(t).unwrap_or(&0),
-                alt: *stored.alt_tf.get(t).unwrap_or(&0),
+                title: *stored.title_tf.get(t.as_str()).unwrap_or(&0),
+                headings: *stored.headings_tf.get(t.as_str()).unwrap_or(&0),
+                body: *stored.body_tf.get(t.as_str()).unwrap_or(&0),
+                anchors: *stored.anchors_tf.get(t.as_str()).unwrap_or(&0),
+                url: *stored.url_tf.get(t.as_str()).unwrap_or(&0),
+                alt: *stored.alt_tf.get(t.as_str()).unwrap_or(&0),
             };
             if tf == FieldHits::default() {
                 continue;
             }
             out.push(TermFrequency {
-                term: t.to_string(),
-                df: self.document_frequency(t),
+                df: self.document_frequency(t.as_str()),
+                term: t,
                 tf,
             });
         }
@@ -404,6 +425,24 @@ fn accumulate(term: &str, stored: &StoredDoc, w: &FieldWeights, hits: &mut Field
     score
 }
 
+/// Title-scoped contribution for an `intitle:` value: `Some` total when every token is
+/// present in the title, `None` otherwise.
+#[allow(clippy::cast_precision_loss)] // term frequencies are tiny; f32 precision is ample
+fn intitle_contribution(
+    tokens: &[String],
+    stored: &StoredDoc,
+    weight: f32,
+    hits: &mut FieldHits,
+) -> Option<f32> {
+    let mut contribution = 0.0;
+    for token in tokens {
+        let tf = stored.title_tf.get(token.as_str())?;
+        contribution += weight * (*tf as f32).min(3.0);
+        hits.title += *tf;
+    }
+    Some(contribution)
+}
+
 impl SearchIndexReader for InMemoryIndex {
     fn generation(&self) -> IndexGeneration {
         self.generation.clone()
@@ -478,8 +517,20 @@ impl SearchIndexReader for InMemoryIndex {
         let w = FieldWeights::default();
         let mut terms = Vec::new();
         let mut total = 0.0;
-        for term in plan.must.iter().chain(&plan.should) {
-            let t = term.text();
+
+        // Positive clauses only: a negated term contributes no lexical score, and the
+        // `intitle:` tokens do.
+        let mut positive: Vec<String> = plan
+            .must
+            .iter()
+            .chain(&plan.should)
+            .map(|t| t.text().to_string())
+            .collect();
+        for value in &plan.filters.intitle {
+            positive.extend(crate::tokenizer::tokenize(value));
+        }
+
+        for t in positive {
             let fields: [(&str, &BTreeMap<String, u32>, f32); 6] = [
                 ("title", &stored.title_tf, w.title),
                 ("headings", &stored.headings_tf, w.headings),
@@ -489,11 +540,11 @@ impl SearchIndexReader for InMemoryIndex {
                 ("alt", &stored.alt_tf, w.alt),
             ];
             for (name, map, weight) in fields {
-                if let Some(tf) = map.get(t) {
+                if let Some(tf) = map.get(t.as_str()) {
                     let contribution = weight * (*tf as f32).min(3.0);
                     total += contribution;
                     terms.push(TermExplanation {
-                        term: t.to_string(),
+                        term: t.clone(),
                         field: name.to_string(),
                         tf: *tf,
                         contribution,

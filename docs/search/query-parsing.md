@@ -114,8 +114,11 @@ Two filters are **hard** (results that do not match are excluded):
 
 Everything else contributes to the score rather than filtering:
 
-- `intitle:` → a large term weight, not a filter. A page with the term in the title that does
-  not contain it in the body is still relevant.
+- `intitle:` → a title-scoped requirement scored with the large title weight, not a metadata
+  filter. The term must appear in the title, but it need not appear in the body, so a page
+  with the term in the title and not the body is still relevant. It is absent from the hard
+  filter list because it is applied as a scored text clause over the title field, not as an
+  exclusion over metadata.
 - `before:`/`after:` on a document with **no date** → excluded, because a date filter is an
   explicit request and a document that cannot satisfy it should not appear. The no-results
   state says this explicitly, because it is the most surprising behaviour in the parser.

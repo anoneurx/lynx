@@ -12,15 +12,22 @@ use std::fmt::Write as _;
 ///
 /// `offset` and `page_size` are the request's pagination inputs; they are echoed into the
 /// prev/next links rather than recomputed from the result count, which would be wrong on
-/// the last page.
+/// the last page. `has_more` says whether a next page exists, so a link is only shown when
+/// one does.
 #[must_use]
-pub fn render_html(resp: &SearchResponse, q: &str, offset: usize, page_size: usize) -> String {
+pub fn render_html(
+    resp: &SearchResponse,
+    q: &str,
+    offset: usize,
+    page_size: usize,
+    has_more: bool,
+) -> String {
     let mut h = String::with_capacity(4096);
     head(&mut h, q);
     body_start(&mut h, q);
     notices(&mut h, resp);
     results(&mut h, resp);
-    pagination(&mut h, q, offset, page_size, resp.results.len());
+    pagination(&mut h, q, offset, page_size, resp.results.len(), has_more);
     operators_help(&mut h);
     h.push_str("</main></body></html>");
     h
@@ -106,7 +113,14 @@ fn results(h: &mut String, resp: &SearchResponse) {
     h.push_str("</ol>");
 }
 
-fn pagination(h: &mut String, q: &str, offset: usize, page_size: usize, returned: usize) {
+fn pagination(
+    h: &mut String,
+    q: &str,
+    offset: usize,
+    page_size: usize,
+    returned: usize,
+    has_more: bool,
+) {
     if returned == 0 {
         return;
     }
@@ -119,7 +133,7 @@ fn pagination(h: &mut String, q: &str, offset: usize, page_size: usize, returned
             query_string(q)
         );
     }
-    if returned >= page_size.max(1) {
+    if has_more {
         let next = offset + page_size.max(1);
         let _ = write!(
             h,

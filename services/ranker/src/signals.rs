@@ -4,6 +4,8 @@
 //! unbounded score (`docs/ranking/overview.md`). Quality, authority, and freshness add;
 //! spam subtracts multiplicatively.
 
+use std::collections::BTreeSet;
+
 use lynx_indexer::Candidate;
 use time::OffsetDateTime;
 
@@ -98,8 +100,35 @@ fn decay(age_days: f64, half_life_days: f64) -> f64 {
     0.5f64.powf(age_days / half_life_days)
 }
 
-/// Duplicate-cluster penalty: `1 / (1 + 0.6·(members − 1))`.
+/// Negation intensity in `[0, 1]`: the fraction of `negated` terms present in the document,
+/// each weighted by how heavily it appears (saturated at three occurrences).
 ///
+/// Presence alone would punish a passing mention as hard as a page that is *about* the term,
+/// so the per-term contribution is scaled by occurrence count. The result drives the
+/// multiplicative negation penalty in [`crate::Ranker`].
+#[must_use]
+#[allow(clippy::cast_precision_loss)] // a handful of terms; f64 is exact well beyond that
+pub fn negation(candidate: &Candidate, negated: &BTreeSet<String>) -> f64 {
+    if negated.is_empty() {
+        return 0.0;
+    }
+    let mut sum = 0.0;
+    for term in negated {
+        let Some(tf) = candidate.terms.iter().find(|t| &t.term == term) else {
+            continue;
+        };
+        let total = f64::from(tf.tf.title)
+            + f64::from(tf.tf.headings)
+            + f64::from(tf.tf.body)
+            + f64::from(tf.tf.anchors)
+            + f64::from(tf.tf.url)
+            + f64::from(tf.tf.alt);
+        sum += (total / 3.0).min(1.0);
+    }
+    (sum / negated.len() as f64).clamp(0.0, 1.0)
+}
+
+/// Duplicate-cluster penalty: `1 / (1 + 0.6·(members − 1))`.
 /// Ten copies of an article produce one strong result, not ten (`docs/ranking/overview.md`
 /// § Cluster suppression).
 #[must_use]

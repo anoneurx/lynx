@@ -30,6 +30,10 @@ pub struct RankingWeights {
     /// Strength of the multiplicative spam penalty. `0.40` means a fully-spam document keeps
     /// `60%` of its raw score.
     pub spam_penalty: f64,
+    /// Strength of the multiplicative negation penalty. `0.50` means a document containing
+    /// every negated term at full intensity keeps `50%` of its raw score. Negation downranks
+    /// but never excludes (`docs/search/query-parsing.md` § Filters vs scoring).
+    pub negation_penalty: f64,
 }
 
 impl Default for RankingWeights {
@@ -41,6 +45,7 @@ impl Default for RankingWeights {
             authority: 0.15,
             context: 0.10,
             spam_penalty: 0.40,
+            negation_penalty: 0.50,
         }
     }
 }

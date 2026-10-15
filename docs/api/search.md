@@ -8,7 +8,8 @@ The endpoint the whole system exists to serve.
 | --------- | ---- | ------- | ----- |
 | `q` | string | required | The query. Max 512 bytes; truncated at a term boundary with a notice |
 | `count` | int | 10 | 1–100 |
-| `offset` | int | 0 | Deep pagination is discouraged; see below |
+| `offset` | int | 0 | Capped at 1000; see below |
+| `cursor` | string | — | Opaque keyset cursor from a previous `meta.next_cursor`; takes precedence over `offset` |
 | `format` | enum | `json` | `json` or `html` |
 | `stream` | bool | false | SSE when `true` |
 | `explain` | bool | false | Include the full signal vector |
@@ -117,16 +118,29 @@ changing someone's query is a decision made on their behalf.
 
 ## Pagination
 
-`offset` exists and is capped at 1000. Beyond that, results are not served by offset.
+Retrieval fetches a fixed candidate window (2000 documents), ranking reorders it, and the
+page is selected from the ranked sequence. `offset` exists and is capped at 1000; beyond
+that, use the cursor.
 
-```text
-why: deep offset requires the ranking to be recomputed and skipped, and skipping on a shifting
-     corpus makes page 50 of a result set inconsistent with page 1
-what clients should do instead: refine the query, or use filters
+Every response carries `meta.next_cursor` when more results exist, and `meta.total` — the
+number of documents matching the query, not the corpus size. Passing the cursor back as
+`cursor=` returns the next page:
+
+```bash
+curl 'https://lynx.example/api/v1/search?q=rust&count=10'
+# { ... "meta": { "total": 1841, "returned": 10, "next_cursor": "4a09...:a1b2..." } }
+curl 'https://lynx.example/api/v1/search?q=rust&count=10&cursor=4a09...%3Aa1b2...'
 ```
 
-That is a real limitation and worth stating plainly rather than hiding behind a cursor that
-would have the same problem in a different shape.
+```text
+why a cursor: a keyset on (score, doc_id) is stable under a moving corpus in a way that a
+              skipped offset is not, so page 50 stays consistent with page 1
+why offset still exists: it is simple and, within the candidate window, correct
+what both share: retrieval is bounded by the candidate window, so very deep paging is not
+                 served by either — refine the query, or use filters
+```
+
+A malformed cursor is ignored rather than rejected; the response starts from the beginning.
 
 ## Streaming
 

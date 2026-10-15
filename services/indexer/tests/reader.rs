@@ -151,6 +151,42 @@ fn negation_is_not_an_exclusion() {
 }
 
 #[test]
+fn negation_carries_the_term_for_the_ranker() {
+    let mut index = InMemoryIndex::new();
+    index.add(doc(1, "https://a.test/", "rust", "a systems language"));
+    index.add(doc(
+        2,
+        "https://b.test/",
+        "rust",
+        "a systems language that also mentions golang",
+    ));
+    let hits = search(&index, "rust -golang");
+    let urls: Vec<_> = hits.iter().map(|c| c.url.as_str()).collect();
+    // The negated document is still returned (negation is a penalty, not an exclusion)...
+    assert!(urls.contains(&"https://b.test/"));
+    // ...and exposes the negated term so the ranker can detect the penalty.
+    let b = hits.iter().find(|c| c.url == "https://b.test/").unwrap();
+    assert!(b.terms.iter().any(|t| t.term == "golang"));
+    assert!(!hits
+        .iter()
+        .find(|c| c.url == "https://a.test/")
+        .unwrap()
+        .terms
+        .iter()
+        .any(|t| t.term == "golang"));
+}
+
+#[test]
+fn intitle_requires_the_term_in_the_title() {
+    let mut index = InMemoryIndex::new();
+    index.add(doc(1, "https://a.test/", "tokio guide", "many things"));
+    index.add(doc(2, "https://b.test/", "unrelated", "tokio in the body"));
+    let hits = search(&index, "tokio intitle:guide");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].url, "https://a.test/");
+}
+
+#[test]
 fn count_matches_search() {
     let index = sample();
     let plan = parse("rust");

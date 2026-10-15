@@ -30,7 +30,7 @@ pub mod signals;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use lynx_indexer::{Candidate, CollectionStats, DocId};
+use lynx_indexer::{Candidate, CollectionStats, DocId, TermFrequency};
 use lynx_query::QueryPlan;
 use time::OffsetDateTime;
 
@@ -61,6 +61,9 @@ pub struct SignalVector {
     pub context: f64,
     /// Spam score in `[0, 1]`.
     pub spam_score: f64,
+    /// Negation intensity in `[0, 1]`: how much of the negated-term weight the document
+    /// carries. `0` when the query has no negative terms.
+    pub negation: f64,
     /// Duplicate-cluster penalty in `(0, 1]`.
     pub duplicate_penalty: f64,
     /// The duplicate cluster, if any.
@@ -80,6 +83,8 @@ pub struct RankedResult<'a> {
     pub score_raw: f64,
     /// The multiplicative spam penalty applied.
     pub spam_penalty: f64,
+    /// The multiplicative negation penalty applied.
+    pub negation_penalty: f64,
     /// The full signal vector.
     pub signals: SignalVector,
     /// 1-based rank within the returned set.
@@ -126,9 +131,10 @@ impl Ranker {
         now: OffsetDateTime,
     ) -> Vec<RankedResult<'a>> {
         let query_terms = unique_query_terms(plan);
+        let negation_terms = negation_terms(plan);
         let mut results: Vec<RankedResult<'a>> = candidates
             .iter()
-            .map(|c| self.score(c, stats, now, &query_terms))
+            .map(|c| self.score(c, stats, now, &query_terms, &negation_terms))
             .collect();
 
         results.sort_by(|a, b| {
@@ -151,9 +157,18 @@ impl Ranker {
         stats: &CollectionStats,
         now: OffsetDateTime,
         query_terms: &BTreeSet<String>,
+        negation_terms: &BTreeSet<String>,
     ) -> RankedResult<'a> {
+        // BM25F scores only the positive terms. A negated term the document happens to
+        // contain is evidence for the penalty below, not a lexical contribution.
+        let positive_terms: Vec<TermFrequency> = candidate
+            .terms
+            .iter()
+            .filter(|t| !negation_terms.contains(&t.term))
+            .cloned()
+            .collect();
         let lexical = bm25f::score(
-            &candidate.terms,
+            &positive_terms,
             candidate.field_lengths,
             stats,
             &self.config,
@@ -163,6 +178,7 @@ impl Ranker {
         let authority = signals::authority(candidate);
         let context = signals::context(candidate);
         let spam_score = signals::clamp01(f64::from(candidate.spam_score));
+        let negation = signals::negation(candidate, negation_terms);
 
         let w = &self.config.weights;
         let score_raw = w.lexical * f64::from(lexical.total)
@@ -171,8 +187,9 @@ impl Ranker {
             + w.authority * authority
             + w.context * context;
         let spam_penalty = 1.0 - w.spam_penalty * spam_score;
+        let negation_penalty = 1.0 - w.negation_penalty * negation;
         let duplicate_penalty = 1.0;
-        let score = score_raw * spam_penalty * duplicate_penalty;
+        let score = score_raw * spam_penalty * duplicate_penalty * negation_penalty;
 
         let coverage = if query_terms.is_empty() {
             1.0
@@ -198,6 +215,7 @@ impl Ranker {
             authority,
             context,
             spam_score,
+            negation,
             duplicate_penalty,
             cluster_id: if candidate.cluster_id == 0 {
                 None
@@ -212,6 +230,7 @@ impl Ranker {
             score,
             score_raw,
             spam_penalty,
+            negation_penalty,
             signals,
             rank: 0,
         }
@@ -232,6 +251,12 @@ pub fn unique_query_terms(plan: &QueryPlan) -> BTreeSet<String> {
         .chain(&plan.should)
         .map(|t| t.text().to_string())
         .collect()
+}
+
+/// The set of negated terms (`-term`), whose presence downranks a document.
+#[must_use]
+pub fn negation_terms(plan: &QueryPlan) -> BTreeSet<String> {
+    plan.must_not.iter().map(|t| t.text().to_string()).collect()
 }
 
 #[cfg(test)]

@@ -13,31 +13,39 @@ No parameters. `?verbose=true` adds per-shard detail for operators.
 {
   "status": "healthy",
   "index": {
-    "generation": "gen-2026-02-17T04:00:00Z",
+    "generation": "gen-42",
     "generation_age_hours": 4.2,
     "documents": 12847391,
     "bytes": 34359738368,
-    "median_crawl_age_days": 3.2,
-    "p90_crawl_age_days": 41.0,
-    "documents_crawled_last_24h": 184203,
-    "shards": 6,
-    "last_build_ms": 41231
+    "shards": 6
   },
   "quality": {
-    "ranking_config_version": "v0.1.0",
-    "avg_quality_score": 0.58,
-    "spam_flagged_rate": 0.031,
-    "duplicate_rate_top10": 0.02
+    "ranking_config_version": "v0.1.0"
   },
   "service": {
     "version": "0.1.0",
     "uptime_seconds": 864192,
-    "latency_p50_ms": 41,
-    "latency_p95_ms": 157,
     "degraded": false
   }
 }
 ```
+
+### v0.1 shape
+
+The example above is the contract. The fields shown are the ones v0.1 serves today:
+
+```text
+served:    status, index.{generation, generation_age_hours, documents, bytes, shards},
+           quality.ranking_config_version, service.{version, uptime_seconds, degraded}
+deferred:  crawl-age quantiles and documents_crawled_last_24h (need a document scan),
+           last_build_ms, quality averages — omitted rather than sent as null
+deferred:  ?verbose=true per-shard detail and the operator token
+```
+
+`index` is always present because the served generation is read from an in-memory manifest that
+cannot fail; the `index: null` case in Degradation applies to deployments whose manifest is on
+disk. The quality averages and crawl-age quantiles are computed from a corpus scan and are added
+when the metrics store is wired in; until then the fields are absent, not fabricated.
 
 ## Status values
 

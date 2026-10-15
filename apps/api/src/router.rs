@@ -12,11 +12,12 @@ use crate::state::AppState;
 /// request cheap to reject rather than expensive to parse.
 pub const BODY_LIMIT_BYTES: usize = 64 * 1024;
 
-/// Build the router: `/api/v1/search` plus the middleware from Step 6 scope
-/// (request tracing, body limit).
+/// Build the router: `/api/v1/search`, `/api/v1/status`, plus the middleware from Step 6
+/// scope (request tracing, body limit).
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/api/v1/search", get(crate::handlers::search))
+        .route("/api/v1/status", get(crate::handlers::status))
         .layer(
             ServiceBuilder::new()
                 .layer(TraceLayer::new_for_http())

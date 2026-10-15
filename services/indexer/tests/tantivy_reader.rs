@@ -167,6 +167,38 @@ fn negation_is_not_an_exclusion() {
 }
 
 #[test]
+fn negation_carries_the_term_for_the_ranker() {
+    let docs = vec![
+        doc(1, "https://a.test/", "rust", "a systems language"),
+        doc(
+            2,
+            "https://b.test/",
+            "rust",
+            "a systems language that also mentions golang",
+        ),
+    ];
+    let index = TantivyIndexReader::from_documents(docs, generation()).unwrap();
+    let hits = search(&index, "rust -golang");
+    let b = hits
+        .iter()
+        .find(|c| c.url == "https://b.test/")
+        .expect("negated document still returned");
+    assert!(b.terms.iter().any(|t| t.term == "golang"));
+}
+
+#[test]
+fn intitle_requires_the_term_in_the_title() {
+    let docs = vec![
+        doc(1, "https://a.test/", "tokio guide", "many things"),
+        doc(2, "https://b.test/", "unrelated", "tokio in the body"),
+    ];
+    let index = TantivyIndexReader::from_documents(docs, generation()).unwrap();
+    let hits = search(&index, "tokio intitle:guide");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].url, "https://a.test/");
+}
+
+#[test]
 fn count_matches_search() {
     let index = sample();
     let plan: QueryPlan = parse("rust");

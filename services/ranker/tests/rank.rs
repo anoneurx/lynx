@@ -4,7 +4,12 @@
 //! properties the design promises (title beats body, stuffing fails, spam sinks a result)
 //! are asserted on the assembled system, not on a hand-built Candidate.
 
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::float_cmp
+)]
 
 use lynx_indexer::{
     Candidate, CollectionStats, DocId, InMemoryIndex, IndexedDocument, SearchIndexReader,
@@ -20,6 +25,7 @@ struct Hit {
     url: String,
     score: f64,
     spam_penalty: f64,
+    negation_penalty: f64,
     signals: SignalVector,
     rank: usize,
 }
@@ -60,6 +66,7 @@ fn rank_all(index: &InMemoryIndex, query: &str, now: OffsetDateTime) -> Vec<Hit>
             url: r.candidate.url.clone(),
             score: r.score,
             spam_penalty: r.spam_penalty,
+            negation_penalty: r.negation_penalty,
             signals: r.signals,
             rank: r.rank,
         })
@@ -175,8 +182,38 @@ fn all_signals_are_present_and_bounded() {
     assert!((0.0..=1.0).contains(&s.authority));
     assert!((0.0..=1.0).contains(&s.context));
     assert!((0.0..=1.0).contains(&s.spam_score));
+    assert!((0.0..=1.0).contains(&s.negation));
     assert!((0.0..=1.0).contains(&s.duplicate_penalty));
     assert!(s.lexical_by_field.contains_key("title"));
+}
+
+#[test]
+fn negation_downranks_but_does_not_exclude() {
+    let mut index = InMemoryIndex::new();
+    index.add(doc(1, "Rust programming", "A systems language."));
+    index.add(doc(
+        2,
+        "Rust programming",
+        "A systems language. It also mentions golang.",
+    ));
+
+    let ranked = rank_all(&index, "rust -golang", datetime!(2026-01-01 00:00 UTC));
+    // Both documents appear: negation penalises, it never excludes.
+    assert_eq!(ranked.len(), 2);
+    let clean = ranked
+        .iter()
+        .find(|r| url_of(r) == "https://e.com/1")
+        .unwrap();
+    let negated = ranked
+        .iter()
+        .find(|r| url_of(r) == "https://e.com/2")
+        .unwrap();
+
+    assert_eq!(clean.signals.negation, 0.0);
+    assert!(negated.signals.negation > 0.0);
+    assert!(negated.negation_penalty < 1.0);
+    assert!(negated.score < clean.score);
+    assert_eq!(url_of(&ranked[0]), "https://e.com/1");
 }
 
 #[test]

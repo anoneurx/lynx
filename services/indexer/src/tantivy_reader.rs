@@ -262,6 +262,7 @@ impl TantivyIndexReader {
 
     fn build_query(&self, plan: &QueryPlan) -> Box<dyn Query> {
         let text = self.fields.text();
+        let title = self.fields.title;
         let mut clauses: Vec<(Occur, Box<dyn Query>)> = Vec::new();
         let mut positive = false;
 
@@ -285,11 +286,18 @@ impl TantivyIndexReader {
                 positive = true;
             }
         }
-        for term in &plan.must_not {
-            if let Some(q) = any_field_query(&text, &tokenize(term.text())) {
-                clauses.push((Occur::MustNot, q));
+        // `intitle:` is a title-scoped requirement: a `Must` over the title field only, so
+        // the term never has to appear in the body. It is a text-field clause, not a
+        // metadata filter, so it is deliberately absent from `passes_filters`.
+        for value in &plan.filters.intitle {
+            if let Some(q) = any_field_query(&[title], &tokenize(value)) {
+                clauses.push((Occur::Must, q));
+                positive = true;
             }
         }
+        // Negative terms add no clause: they are a scoring penalty, not an exclusion, and
+        // the ranker downranks a document that contains one
+        // (`docs/search/query-parsing.md` § Filters vs scoring).
         if !positive {
             clauses.insert(0, (Occur::Must, Box::new(AllQuery)));
         }
@@ -333,6 +341,32 @@ fn add_optional_date(doc: &mut TantivyDocument, field: Field, value: Option<Offs
     if let Some(t) = value {
         doc.add_i64(field, t.unix_timestamp());
     }
+}
+
+/// The token forms of a plan's positive clauses (`must`, `should`, `intitle:`): what the
+/// ranker scores.
+fn positive_tokens(plan: &QueryPlan) -> Vec<String> {
+    let mut tokens: Vec<String> = plan
+        .must
+        .iter()
+        .chain(&plan.should)
+        .flat_map(|t| tokenize(t.text()))
+        .collect();
+    for value in &plan.filters.intitle {
+        tokens.extend(tokenize(value));
+    }
+    tokens
+}
+
+/// Every token a candidate may carry, positive and negative alike. The negative ones are
+/// present so the ranker can detect a penalty without a second document lookup; they are
+/// filtered back out before BM25F scores the document.
+fn query_tokens(plan: &QueryPlan) -> Vec<String> {
+    let mut tokens = positive_tokens(plan);
+    for term in &plan.must_not {
+        tokens.extend(tokenize(term.text()));
+    }
+    tokens
 }
 
 fn any_field_query(text_fields: &[Field], tokens: &[String]) -> Option<Box<dyn Query>> {
@@ -595,12 +629,7 @@ impl SearchIndexReader for TantivyIndexReader {
             .search(query.as_ref(), &TopDocs::with_limit(wanted.max(1)))
             .map_err(|e| IndexError::Internal(e.to_string()))?;
 
-        let tokens: Vec<String> = plan
-            .must
-            .iter()
-            .chain(&plan.should)
-            .flat_map(|t| tokenize(t.text()))
-            .collect();
+        let tokens = query_tokens(plan);
 
         let mut out = Vec::new();
         for (score, address) in top {
@@ -695,12 +724,7 @@ impl SearchIndexReader for TantivyIndexReader {
         let doc: TantivyDocument = searcher
             .doc(address)
             .map_err(|e| IndexError::Corrupt(e.to_string()))?;
-        let tokens: Vec<String> = plan
-            .must
-            .iter()
-            .chain(&plan.should)
-            .flat_map(|t| tokenize(t.text()))
-            .collect();
+        let tokens = positive_tokens(plan);
         let (_hits, terms, total) =
             field_hits_and_terms(&doc, &self.fields, &tokens, &FieldWeights::default());
         Ok(Explanation {

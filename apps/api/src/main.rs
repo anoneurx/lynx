@@ -38,6 +38,7 @@ async fn main() {
         reader: Arc::new(index),
         ranker: Ranker::default(),
         clock: None,
+        started_at: time::OffsetDateTime::now_utc(),
     });
 
     let app = lynx_api::router::router(app_state);
