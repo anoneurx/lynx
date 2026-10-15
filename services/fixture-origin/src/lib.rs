@@ -11,8 +11,11 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 #![forbid(unsafe_code)]
 
+use std::io::Write;
 use std::net::{Ipv4Addr, SocketAddr};
+use std::time::Duration;
 
+use axum::body::{Body, Bytes};
 use axum::extract::Path;
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -27,6 +30,12 @@ pub const DEFAULT_ROBOTS: &str = "User-agent: *\nAllow: /\n";
 /// The size the `oversized` variant exceeds.
 const OVERSIZED_BYTES: usize = 256 * 1024;
 
+/// The size `/huge` streams from.
+const HUGE_BYTES: usize = 1024 * 1024;
+
+/// The size of `/declared-large`, served with an accurate but over-cap `Content-Length`.
+const DECLARED_LARGE_BYTES: usize = 1024 * 1024;
+
 /// Build the router. Exposed so tests can drive it with `tower` if they prefer.
 pub fn router() -> Router {
     Router::new()
@@ -36,6 +45,16 @@ pub fn router() -> Router {
         .route("/page/:id", get(page))
         .route("/status/:code", get(status))
         .route("/redirect/private", get(redirect_private))
+        .route("/huge", get(huge))
+        .route("/declared-large", get(declared_large))
+        .route("/gzip", get(gzip_body))
+        .route("/brotli", get(brotli_body))
+        .route("/gzip-bomb", get(gzip_bomb))
+        .route("/octet", get(octet))
+        .route("/slow", get(slow))
+        .route("/redirect/loop-a", get(redirect_loop_a))
+        .route("/redirect/loop-b", get(redirect_loop_b))
+        .route("/redirect/chain/:n", get(redirect_chain))
 }
 
 /// Serve the router on `listener` until it errors.
@@ -99,10 +118,134 @@ async fn page(Path(id): Path<String>) -> Response {
 }
 
 async fn status(Path(code): Path<u16>) -> Response {
-    StatusCode::from_u16(code).map_or_else(
-        |_| (StatusCode::BAD_REQUEST, "invalid status code\n").into_response(),
-        IntoResponse::into_response,
+    match StatusCode::from_u16(code) {
+        Err(_) => (StatusCode::BAD_REQUEST, "invalid status code\n").into_response(),
+        Ok(StatusCode::TOO_MANY_REQUESTS) => (
+            StatusCode::TOO_MANY_REQUESTS,
+            [(header::RETRY_AFTER, "120")],
+            "slow down\n",
+        )
+            .into_response(),
+        Ok(status) => status.into_response(),
+    }
+}
+
+/// A body several times the stream cap, sent with no `Content-Length` (chunked) so the
+/// streaming byte cap — not the header precheck — is what refuses it.
+async fn huge() -> Response {
+    const CHUNK: usize = 64 * 1024;
+    let chunks = HUGE_BYTES / CHUNK;
+    let stream = futures_util::stream::iter(
+        (0..chunks).map(|_| Ok::<Bytes, std::io::Error>(Bytes::from(vec![b'a'; CHUNK]))),
+    );
+    (
+        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        Body::from_stream(stream),
     )
+        .into_response()
+}
+
+/// A body larger than a test's byte cap, sent with an accurate `Content-Length`, so
+/// the header precheck refuses it before a single body byte is read.
+async fn declared_large() -> Response {
+    (
+        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        Bytes::from(vec![b'b'; DECLARED_LARGE_BYTES]),
+    )
+        .into_response()
+}
+
+/// A gzip-encoded HTML body with `Content-Encoding: gzip`.
+// Writing to an in-memory `Vec` cannot fail, so the result is unwrapped.
+#[allow(clippy::expect_used)]
+async fn gzip_body() -> Response {
+    let payload = b"<html><body>compressed fixture</body></html>".repeat(8);
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(&payload).expect("gzip write");
+    let bytes = encoder.finish().expect("gzip finish");
+    compressed(bytes, "gzip")
+}
+
+/// A brotli-encoded HTML body with `Content-Encoding: br`.
+// Writing to an in-memory `Vec` cannot fail, so the result is unwrapped.
+#[allow(clippy::expect_used)]
+async fn brotli_body() -> Response {
+    let payload = b"<html><body>brotli fixture</body></html>".repeat(8);
+    let mut bytes = Vec::new();
+    {
+        let mut writer = brotli::CompressorWriter::new(&mut bytes, 4096, 6, 22);
+        writer.write_all(&payload).expect("brotli write");
+    }
+    compressed(bytes, "br")
+}
+
+/// A compression bomb: megabytes of zeros that compress to a few kilobytes.
+// Writing to an in-memory `Vec` cannot fail, so the result is unwrapped.
+#[allow(clippy::expect_used)]
+async fn gzip_bomb() -> Response {
+    let payload = vec![0_u8; 4 * 1024 * 1024];
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+    encoder.write_all(&payload).expect("gzip write");
+    let bytes = encoder.finish().expect("gzip finish");
+    compressed(bytes, "gzip")
+}
+
+/// A body served with a non-indexable content type.
+async fn octet() -> Response {
+    (
+        [(header::CONTENT_TYPE, "application/octet-stream")],
+        "not for indexing\n",
+    )
+        .into_response()
+}
+
+/// Headers immediately, then a body that stalls past any sane idle deadline.
+async fn slow() -> Response {
+    let stream = futures_util::stream::once(async {
+        tokio::time::sleep(Duration::from_secs(30)).await;
+        Ok::<Bytes, std::io::Error>(Bytes::from_static(b"late\n"))
+    });
+    (
+        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        Body::from_stream(stream),
+    )
+        .into_response()
+}
+
+async fn redirect_loop_a() -> Response {
+    redirect_to("/redirect/loop-b")
+}
+
+async fn redirect_loop_b() -> Response {
+    redirect_to("/redirect/loop-a")
+}
+
+/// Redirects to `/redirect/chain/{n-1}` until `n` is zero, then serves a final page.
+async fn redirect_chain(Path(n): Path<u32>) -> Response {
+    if n == 0 {
+        return html("<!doctype html><html><body>chain end</body></html>");
+    }
+    redirect_to(&format!("/redirect/chain/{}", n - 1))
+}
+
+fn redirect_to(location: &str) -> Response {
+    (
+        StatusCode::FOUND,
+        [(header::LOCATION, location.to_string())],
+        "",
+    )
+        .into_response()
+}
+
+fn compressed(bytes: Vec<u8>, encoding: &'static str) -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            (header::CONTENT_ENCODING, encoding),
+        ],
+        Bytes::from(bytes),
+    )
+        .into_response()
 }
 
 fn text(body: &'static str) -> Response {

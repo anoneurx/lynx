@@ -13,17 +13,19 @@
 //! - [`safety`] — the fetch safety gate: scheme/userinfo/port checks, numeric literal
 //!   decoding, DNS resolution, deny-based address classification, DNS pinning, and
 //!   per-hop redirect validation. The SSRF control.
-//!
-//! The streaming downloader arrives in Step 11.
+//! - [`downloader`] — the streaming downloader: manual redirects, address pinning,
+//!   independent deadlines, a streamed byte cap, and ratio-capped decompression.
 
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 #![forbid(unsafe_code)]
 
 pub mod cache;
+pub mod downloader;
 pub mod robots;
 pub mod safety;
 
 pub use cache::{cached_from_status, CachedRobots, InMemoryRobotsCache, RobotsCache};
+pub use downloader::{parse_retry_after, Downloader, FetchError, FetchResponse};
 pub use robots::{
     effective_crawl_delay_seconds, parse_capped, policy_for_status, GroupSelection, RobotsDecision,
     RobotsRules, RobotsStatusPolicy, USER_AGENT_GROUP, USER_AGENT_HEADER,

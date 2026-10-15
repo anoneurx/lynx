@@ -11,6 +11,9 @@ authors.workspace = true
 [dependencies]
 axum.workspace = true
 tokio.workspace = true
+brotli.workspace = true
+flate2.workspace = true
+futures-util.workspace = true
 
 [dev-dependencies]
 tower.workspace = true

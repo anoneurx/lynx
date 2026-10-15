@@ -245,6 +245,7 @@ pub struct FetchPolicy {
     allowed_ports: Vec<u16>,
     max_redirects: u8,
     limits: ResourceLimits,
+    allow_private_addresses: bool,
 }
 
 impl Default for FetchPolicy {
@@ -253,6 +254,7 @@ impl Default for FetchPolicy {
             allowed_ports: vec![80, 443],
             max_redirects: 5,
             limits: ResourceLimits::default(),
+            allow_private_addresses: false,
         }
     }
 }
@@ -278,6 +280,7 @@ impl FetchPolicy {
             allowed_ports,
             max_redirects,
             limits,
+            allow_private_addresses: false,
         })
     }
 
@@ -309,6 +312,23 @@ impl FetchPolicy {
     #[must_use]
     pub fn allows_port(&self, port: u16) -> bool {
         self.allowed_ports.contains(&port)
+    }
+
+    /// Whether non-public addresses are permitted.
+    #[must_use]
+    pub fn allows_private_addresses(&self) -> bool {
+        self.allow_private_addresses
+    }
+
+    /// **Testing only.** Permit connections to non-public addresses.
+    ///
+    /// This exists solely so hermetic tests can point the downloader at the loopback
+    /// fixture server. Production code must never call it: it defeats the entire SSRF
+    /// control. The name is deliberately alarming.
+    #[must_use]
+    pub fn dangerously_allow_private_addresses(mut self) -> Self {
+        self.allow_private_addresses = true;
+        self
     }
 }
 
@@ -407,13 +427,15 @@ pub async fn validate_url(
         }
     };
 
-    for address in &addresses {
-        let class = classify(*address);
-        if !class.is_public() {
-            return Err(SafetyError::PrivateAddress {
-                addr: *address,
-                class,
-            });
+    if !policy.allows_private_addresses() {
+        for address in &addresses {
+            let class = classify(*address);
+            if !class.is_public() {
+                return Err(SafetyError::PrivateAddress {
+                    addr: *address,
+                    class,
+                });
+            }
         }
     }
 
