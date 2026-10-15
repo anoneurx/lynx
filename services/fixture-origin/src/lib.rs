@@ -35,6 +35,7 @@ pub fn router() -> Router {
         .route("/robots/:variant", get(robots_variant))
         .route("/page/:id", get(page))
         .route("/status/:code", get(status))
+        .route("/redirect/private", get(redirect_private))
 }
 
 /// Serve the router on `listener` until it errors.
@@ -143,6 +144,17 @@ fn redirect() -> Response {
         .into_response()
 }
 
+/// A redirect whose target is a link-local metadata address. The safety gate must
+/// refuse the next hop; a client that follows redirects transparently would not.
+async fn redirect_private() -> Response {
+    (
+        StatusCode::FOUND,
+        [(header::LOCATION, "http://169.254.169.254/latest/meta-data/")],
+        "",
+    )
+        .into_response()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -234,5 +246,23 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::FOUND);
         assert_eq!(response.headers()[header::LOCATION], "/robots/allow-all");
+    }
+
+    #[tokio::test]
+    async fn private_redirect_targets_link_local() {
+        let response = router()
+            .oneshot(
+                Request::builder()
+                    .uri("/redirect/private")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FOUND);
+        assert_eq!(
+            response.headers()[header::LOCATION],
+            "http://169.254.169.254/latest/meta-data/"
+        );
     }
 }

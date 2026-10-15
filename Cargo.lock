@@ -1245,9 +1245,12 @@ dependencies = [
  "lynx-fixture-origin",
  "lynx-models",
  "pretty_assertions",
+ "proptest",
  "reqwest",
+ "thiserror 1.0.69",
  "time",
  "tokio",
+ "url",
 ]
 
 [[package]]
