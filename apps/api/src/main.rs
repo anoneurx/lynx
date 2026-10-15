@@ -5,12 +5,9 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::{routing::get, Router};
 use lynx_indexer::InMemoryIndex;
 use lynx_ranker::Ranker;
 use time::macros::datetime;
-use tower::ServiceBuilder;
-use tower_http::{limit::RequestBodyLimitLayer, trace::TraceLayer};
 use tracing::info;
 
 use lynx_api::state::AppState;
@@ -24,7 +21,7 @@ async fn main() {
     }
 
     // Minimal bootstrap: create a seeded in-memory index so /search works out of the box.
-    // This is a temporary fixture for Step 6; in production, Tantivy will be loaded.
+    // This is a temporary fixture; in production, a Tantivy generation is loaded.
     let mut index = InMemoryIndex::new();
     let mut rust_doc = lynx_indexer::IndexedDocument::new(
         lynx_common::ids::DocumentId::from_canonical_url("https://tokio.rs/"),
@@ -43,14 +40,7 @@ async fn main() {
         clock: None,
     });
 
-    let app = Router::new()
-        .route("/api/v1/search", get(lynx_api::handlers::search))
-        .layer(
-            ServiceBuilder::new()
-                .layer(TraceLayer::new_for_http())
-                .layer(RequestBodyLimitLayer::new(64 * 1024)),
-        )
-        .with_state(app_state);
+    let app = lynx_api::router::router(app_state);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
     info!(service = "lynx-api", addr = %addr, "starting");
