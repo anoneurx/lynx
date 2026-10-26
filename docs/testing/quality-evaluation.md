@@ -13,6 +13,12 @@
 
 Curated query → relevance labels (0–3).
 
+The in-repo v0 set — `services/quality/fixtures/judge-set-v0.jsonl` over the corpus in
+`services/quality/src/fixtures.rs` — is checked by the golden gates in
+`services/quality/tests/golden.rs` on **every** `cargo test` (the gate lives in
+`lynx-quality`, not in scheduled Python CI: a ranking regression can never merge
+silently). The production-scale sets below are the future scheduled process.
+
 ```
 eval/judge-sets/
   ├── v2026-q1.jsonl    # 2,000 queries, 5 annotators each

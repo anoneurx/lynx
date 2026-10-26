@@ -9,6 +9,28 @@ engine yet.
 
 ## [Unreleased]
 
+### Added (implementation Step 15 — quality harness)
+
+- **`lynx-quality` crate** (§Z Step 15): graded-relevance metrics — NDCG@10
+  (`2^rel−1` gains, position-discounted), MRR@10, Recall@100, plus top-10 hygiene
+  ratios (duplicate-cluster share and spam-penalised share) — all total functions with
+  unit-tested math.
+- **Judged sets**: strict JSONL loader (one query per line, URL-keyed judgments,
+  0–3 labels; malformed data is an error, never a silently skipped query) and the
+  source-controlled **v0 judge set** (`fixtures/judge-set-v0.jsonl`, 9 queries) with its
+  14-document fixture corpus (12 topical docs, one keyword-stuffed spam doc, one mirror
+  duplicate).
+- **Golden gates in CI**: `check_gates` pins the documented targets (NDCG@10 ≥ 0.65,
+  MRR@10 ≥ 0.55, Recall@100 ≥ 0.80, duplicate < 0.20, spam < 0.10, p99 < 200 ms) and a
+  test runs the v0 judged set through the production parse → retrieve → rank pipeline on
+  every `cargo test`, so ranking regressions fail the build; `document` cross-check makes
+  corpus/judge-set divergence a data-bug error. Current set: NDCG@10 0.966, MRR@10 1.0,
+  Recall@100 0.889, duplicates 0, spam 0.0625, p99 < 200 ms — all gates pass.
+- **Quality reporting**: `render_markdown` produces the documented "Search Quality
+  Report" shape (headline metrics + zero-result coverage gaps).
+- Docs: `docs/testing/quality-evaluation.md` and `docs/research/datasets.md` now point
+  at the in-repo judge set and gates.
+
 ### Added (implementation Step 14 — suggestions service)
 
 - **Suggestions completion pipeline** (§Z Step 14). `lynx-indexer` readers gained the

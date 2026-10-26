@@ -19,6 +19,7 @@ members = [
   "services/query",
   "services/ranker",
   "services/suggestions",
+  "services/quality",
   "services/frontier",
   "services/parser",
   "services/indexer",
@@ -126,6 +127,7 @@ lynx-query = { path = "services/query" }
 lynx-ranker = { path = "services/ranker" }
 lynx-indexer = { path = "services/indexer" }
 lynx-suggestions = { path = "services/suggestions" }
+lynx-quality = { path = "services/quality" }
 lynx-parser = { path = "services/parser" }
 lynx-storage = { path = "services/storage" }
 lynx-frontier = { path = "services/frontier" }

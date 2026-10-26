@@ -1434,6 +1434,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "lynx-quality"
+version = "0.1.0"
+dependencies = [
+ "lynx-indexer",
+ "lynx-query",
+ "lynx-ranker",
+ "pretty_assertions",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "time",
+]
+
+[[package]]
 name = "lynx-query"
 version = "0.1.0"
 dependencies = [

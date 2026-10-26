@@ -4,6 +4,17 @@ Curated datasets for training, evaluation, and benchmarking.
 
 ## Judge Sets (Human-Labeled)
 
+The **v0 judge set** is in source control and runs as a golden gate on every test:
+
+| File | Queries | Labels | Notes |
+| ---- | ------- | ------ |------ |
+| `services/quality/fixtures/judge-set-v0.jsonl` | 9 | 1–3 per query | Fixture corpus live in `services/quality/src/fixtures.rs`; gates are checked by `services/quality/tests/golden.rs` on every `cargo test` |
+
+The production-scale sets below are the future process; the in-repo set is what actually
+guards CI today. Format for both is JSONL, one query per line; the in-repo set keys
+judgments by canonical URL (`{"doc": "https://…"}`) instead of the `doc_id` hash shown in
+the example, because the documents it judges live beside it in source control.
+
 | File | Queries | Labels/Query | Annotators | Created | Use Case |
 | ---- | ------- | ------------ | ---------- | ------- | -------- |
 | `v2026-q1.jsonl` | 2,000 | 10 | 5 | 2026-03-15 | Baseline |

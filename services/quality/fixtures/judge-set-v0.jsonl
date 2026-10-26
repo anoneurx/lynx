@@ -1,0 +1,12 @@
+# Judge set v0 — 9 judged queries over the fixture corpus in src/fixtures.rs.
+# Labels: 0 not relevant, 1 marginally relevant, 2 relevant, 3 the result a person wanted.
+# Judged sets are released, never edited to make a gate pass (docs/testing/quality-evaluation.md).
+{"query": "rust async", "judgments": [{"doc": "https://tokio.rs/", "relevance": 3}, {"doc": "https://docs.rs/async-std/", "relevance": 2}, {"doc": "https://blog.rust-lang.org/async/", "relevance": 2}]}
+{"query": "zig programming", "judgments": [{"doc": "https://ziglang.org/", "relevance": 3}, {"doc": "https://zig.news/getting-started/", "relevance": 2}]}
+{"query": "css flexbox", "judgments": [{"doc": "https://developer.mozilla.org/flexbox/", "relevance": 3}, {"doc": "https://css-tricks.com/guide-to-flexbox/", "relevance": 2}]}
+{"query": "postgres index", "judgments": [{"doc": "https://www.postgresql.org/docs/indexes/", "relevance": 3}, {"doc": "https://use-the-index-luke.com/", "relevance": 2}]}
+{"query": "python asyncio", "judgments": [{"doc": "https://docs.python.org/library/asyncio/", "relevance": 3}, {"doc": "https://www.python.org/", "relevance": 1}]}
+{"query": "docker containers", "judgments": [{"doc": "https://docs.docker.com/", "relevance": 3}]}
+{"query": "git basics", "judgments": [{"doc": "https://git-scm.com/book/", "relevance": 3}]}
+{"query": "\"async runtime\"", "judgments": [{"doc": "https://tokio.rs/", "relevance": 3}, {"doc": "https://docs.rs/async-std/", "relevance": 1}]}
+{"query": "site:zig.news zig", "judgments": [{"doc": "https://zig.news/getting-started/", "relevance": 2}]}
