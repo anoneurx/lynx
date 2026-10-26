@@ -1270,6 +1270,7 @@ name = "lynx-api"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "blake3",
  "lynx-common",
  "lynx-config",
  "lynx-indexer",
@@ -1277,6 +1278,8 @@ dependencies = [
  "lynx-models",
  "lynx-query",
  "lynx-ranker",
+ "lynx-security",
+ "rand 0.8.8",
  "serde",
  "serde_json",
  "thiserror 1.0.69",

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use axum::{
-    extract::{Query, State},
+    extract::{RawQuery, State},
     http::{header, StatusCode},
     response::IntoResponse,
 };
@@ -24,6 +24,11 @@ fn default_clock() -> Arc<dyn Clock> {
 
 /// `GET /api/v1/search`.
 ///
+/// The raw query string is parsed in-handler with tolerance: values that fail to parse
+/// fall back to their documented defaults instead of producing a 500 from a parser
+/// rejection, and non-UTF-8 input is decoded lossily (`docs/api/errors.md`: "400 for any
+/// client input problem, 5xx only for server faults").
+///
 /// Content negotiation: `format=json` (default) or `format=html`. The HTML representation
 /// is server-rendered and fully usable without JavaScript (`docs/api/search.md`).
 ///
@@ -37,12 +42,13 @@ fn default_clock() -> Arc<dyn Clock> {
 #[allow(clippy::unused_async)]
 pub async fn search(
     State(state): State<Arc<AppState>>,
-    Query(params): Query<SearchQuery>,
+    RawQuery(raw): RawQuery,
 ) -> Result<impl IntoResponse, ApiErrorKind> {
     let start = Instant::now();
     let clock = state.clock.clone().unwrap_or_else(default_clock);
     let now = clock.now();
 
+    let params = SearchQuery::from_raw_query(raw.as_deref());
     if params.q.is_empty() {
         return Err(ApiErrorKind::InvalidQuery);
     }
@@ -68,12 +74,13 @@ pub async fn search(
 
     // Cursor takes precedence over offset. A malformed cursor is ignored (never an error):
     // the user-facing bias is to show results rather than reject.
+    let clamped_offset = params.offset.min(MAX_OFFSET);
     let start_index = match params.cursor.as_deref().and_then(decode_cursor) {
         Some((score, doc_id)) => position_after(&ranked, score, &doc_id),
-        None => params.offset.min(MAX_OFFSET).min(ranked.len()),
+        None => clamped_offset.min(ranked.len()),
     };
     let page_size = params.page_size();
-    let end_index = (start_index + page_size).min(ranked.len());
+    let end_index = start_index.saturating_add(page_size).min(ranked.len());
     let page = &ranked[start_index.min(ranked.len())..end_index];
     let next_cursor = if end_index < ranked.len() {
         page.last().map(encode_cursor)
@@ -84,17 +91,17 @@ pub async fn search(
 
     let resp = SearchResponse::from_ranked(
         &plan,
+        params.explain,
         page,
         &gen,
         total,
         start.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
-        plan.truncated,
         next_cursor,
     );
 
     let format = params.format.to_ascii_lowercase();
     if format == "html" {
-        let html = crate::serp::render_html(&resp, &params.q, params.offset, page_size, has_more);
+        let html = crate::serp::render_html(&resp, &params.q, clamped_offset, page_size, has_more);
         Ok((
             StatusCode::OK,
             [(header::CONTENT_TYPE, "text/html; charset=utf-8")],

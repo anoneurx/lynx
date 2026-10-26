@@ -13,6 +13,7 @@ lynx-common.workspace = true
 lynx-models.workspace = true
 lynx-config.workspace = true
 lynx-logging.workspace = true
+lynx-security.workspace = true
 lynx-query.workspace = true
 lynx-ranker.workspace = true
 lynx-indexer.workspace = true
@@ -25,6 +26,8 @@ serde.workspace = true
 serde_json.workspace = true
 time.workspace = true
 thiserror.workspace = true
+rand.workspace = true
+blake3.workspace = true
 
 [lints]
 workspace = true

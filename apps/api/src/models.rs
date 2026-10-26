@@ -34,6 +34,85 @@ pub struct SearchQuery {
     pub stream: bool,
 }
 
+impl SearchQuery {
+    /// Parse the raw query string with tolerance.
+    ///
+    /// Every value that fails to parse falls back to its documented default, and bytes
+    /// that are not UTF-8 are decoded lossily. A request that survives parsing therefore
+    /// always reaches the search path; the only hard rejection is an empty `q`, which
+    /// the handler turns into `INVALID_QUERY`.
+    #[must_use]
+    pub fn from_raw_query(raw: Option<&str>) -> Self {
+        let mut this = Self {
+            q: String::new(),
+            count: default_count(),
+            offset: 0,
+            cursor: None,
+            explain: false,
+            format: default_format(),
+            stream: false,
+        };
+        let Some(raw) = raw else { return this };
+        for pair in raw.split('&') {
+            let Some((key, value)) = pair.split_once('=') else {
+                continue;
+            };
+            let key = decode_component(key);
+            let value = decode_component(value);
+            match key.as_str() {
+                "q" => this.q = value,
+                "count" => {
+                    if let Ok(n) = value.trim().parse() {
+                        this.count = n;
+                    }
+                }
+                "offset" => {
+                    if let Ok(n) = value.trim().parse() {
+                        this.offset = n;
+                    }
+                }
+                "cursor" => this.cursor = Some(value),
+                "explain" => this.explain = matches!(value.as_str(), "1" | "true" | "yes"),
+                "format" => this.format = value.to_ascii_lowercase(),
+                "stream" => this.stream = matches!(value.as_str(), "1" | "true" | "yes"),
+                _ => {}
+            }
+        }
+        this
+    }
+}
+
+/// Percent-decode a single key or value: `+` decodes to a space, `%XX` to its byte, and
+/// invalid UTF-8 sequences are replaced (`U+FFFD`), never rejected.
+fn decode_component(value: &str) -> String {
+    let mut bytes: Vec<u8> = Vec::with_capacity(value.len());
+    let raw = value.as_bytes();
+    let mut i = 0;
+    while i < raw.len() {
+        match raw[i] {
+            b'+' => {
+                bytes.push(b' ');
+                i += 1;
+            }
+            b'%' if i + 2 < raw.len() => {
+                let hex = std::str::from_utf8(&raw[i + 1..i + 3]).unwrap_or("zz");
+                if let Ok(byte) = u8::from_str_radix(hex, 16) {
+                    bytes.push(byte);
+                    i += 3;
+                } else {
+                    bytes.push(b'%');
+                    i += 1;
+                }
+            }
+            b => {
+                bytes.push(b);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
 fn default_count() -> usize {
     10
 }
@@ -140,17 +219,17 @@ impl SearchResponse {
     #[must_use]
     pub fn from_ranked(
         plan: &QueryPlan,
+        explain: bool,
         ranked: &[RankedResult<'_>],
         generation: &IndexGeneration,
         total: u64,
         took_ms: u64,
-        truncated: bool,
         next_cursor: Option<String>,
     ) -> Self {
         let mut results = Vec::with_capacity(ranked.len());
         for r in ranked {
             let c: &Candidate = r.candidate;
-            let signals = SignalVector {
+            let signals = explain.then_some(SignalVector {
                 lexical: r.signals.lexical,
                 freshness: r.signals.freshness,
                 quality: r.signals.quality,
@@ -159,7 +238,7 @@ impl SearchResponse {
                 spam: r.signals.spam_score,
                 negation: r.signals.negation,
                 negation_penalty: r.negation_penalty,
-            };
+            });
             results.push(SearchResult {
                 rank: r.rank,
                 doc_id: c.doc_id.to_string(),
@@ -174,7 +253,7 @@ impl SearchResponse {
                 score: r.score,
                 published_at: c.published_at.map(|d| d.date().to_string()),
                 content_type: c.content_type.clone(),
-                signals: Some(signals),
+                signals,
                 cluster_id: r.signals.cluster_id,
             });
         }
@@ -193,6 +272,9 @@ impl SearchResponse {
             ),
         };
         let returned = results.len();
+        // Notices come straight from the parse pipeline (e.g. truncation); the first
+        // one is the most actionable, and the full set stays in the plan for explain.
+        let notice = plan.notices.first().cloned();
         SearchResponse {
             query: query_info,
             results,
@@ -204,8 +286,8 @@ impl SearchResponse {
                 ranking_config_version: generation.ranking_config_version.clone(),
                 degraded: false,
                 next_cursor,
-                notice: None,
-                truncated: if truncated { Some(true) } else { None },
+                notice,
+                truncated: plan.truncated.then_some(true),
             },
         }
     }

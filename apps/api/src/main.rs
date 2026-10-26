@@ -39,14 +39,22 @@ async fn main() {
         ranker: Ranker::default(),
         clock: None,
         started_at: time::OffsetDateTime::now_utc(),
+        security: lynx_api::middleware::SecurityContext::from_env(),
     });
 
     let app = lynx_api::router::router(app_state);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
+    let addr = std::env::var("LYNX_API_BIND")
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(SocketAddr::from(([127, 0, 0, 1], 8080)));
     info!(service = "lynx-api", addr = %addr, "starting");
     if let Ok(listener) = tokio::net::TcpListener::bind(addr).await {
-        let _ = axum::serve(listener, app).await;
+        let _ = axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await;
     } else {
         tracing::error!("failed to bind to {}", addr);
     }

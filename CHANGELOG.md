@@ -9,6 +9,31 @@ engine yet.
 
 ## [Unreleased]
 
+### Fixed (serving-plane hardening, serving audit 2026-10-26)
+
+- **Security headers are now applied to every response** through a router-level layer
+  (`packages/security/src/headers.rs` was defined but never wired); `/api/v1/status`
+  keeps its documented `Cache-Control: public, max-age=60` and `Vary` is emitted.
+- **Rate limiting is wired.** The rotating salted prefix-bucket limiter
+  (`lynx-security::ratelimit`) now guards `/api/v1/search` at 30/min by default with
+  the documented `RATE_LIMITED` envelope, `Retry-After`, and `X-RateLimit-*` headers;
+  the bucket derives from the daily HMAC of the client network prefix, honouring
+  `LYNX_API_TRUSTED_PROXY_DEPTH`, and nothing durable is stored.
+- **`X-Request-Id` on every response.** A well-formed inbound id is echoed; anything
+  else is replaced with a fresh UUIDv7 so it cannot inject into logs. Added the
+  `NOT_FOUND` envelope fallback for unmatched paths.
+- **Trace spans no longer carry the query string** — the custom span holds only the
+  method and path, so raising the log level cannot leak query text into logs.
+- **Search-endpoint extraction is tolerant.** The raw query string is parsed in-handler:
+  malformed `count`/`offset` fall back to defaults and non-UTF-8 input is decoded
+  lossily instead of failing out of the error envelope.
+- **SERP hardening.** Only `http`/`https` URLs render as links (a `javascript:`
+  entry in the index renders as inert text); pagination arithmetic is overflow-safe;
+  truncation now sets `meta.notice` in JSON, and `explain` is honoured — signals are
+  included only when `explain=1`, per `docs/api/search.md`.
+- **`503`/`429` responses carry `Retry-After` headers** as `docs/api/errors.md` requires.
+- Restored the end-to-end negation test that was dropped from `apps/api/tests`.
+
 ### Added
 
 - **Architecture and design documentation.** System architecture with the two-plane

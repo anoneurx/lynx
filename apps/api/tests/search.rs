@@ -52,6 +52,7 @@ fn seeded() -> Arc<AppState> {
         ranker: Ranker::default(),
         clock: None,
         started_at: datetime!(2026-02-18 00:00 UTC),
+        security: lynx_api::middleware::SecurityContext::disabled(),
     })
 }
 
@@ -231,42 +232,6 @@ async fn intitle_restricts_to_the_title() {
 }
 
 #[tokio::test]
-async fn negation_penalises_without_excluding() {
-    let mut index = InMemoryIndex::new();
-    let mut clean = IndexedDocument::new(
-        DocumentId::from_canonical_url("https://a.test/"),
-        "https://a.test/",
-        "Rust programming",
-        "A systems language.",
-    );
-    clean.lang = Some("en".to_string());
-    index.add(clean);
-    let mut negated = IndexedDocument::new(
-        DocumentId::from_canonical_url("https://b.test/"),
-        "https://b.test/",
-        "Rust programming",
-        "A systems language that also mentions golang.",
-    );
-    negated.lang = Some("en".to_string());
-    index.add(negated);
-
-    let state = Arc::new(AppState {
-        reader: Arc::new(index),
-        ranker: Ranker::default(),
-        clock: None,
-        started_at: datetime!(2026-02-18 00:00 UTC),
-    });
-
-    let (_, _, body) = get_with(state, "/api/v1/search?q=rust+-golang").await;
-    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
-    // Both appear; the one containing the negated term is downranked.
-    assert_eq!(v["meta"]["returned"], 2);
-    assert_eq!(v["results"][0]["url"], "https://a.test/");
-    assert_eq!(v["results"][0]["signals"]["negation"].as_f64().unwrap(), 0.0);
-    assert!(v["results"][1]["signals"]["negation"].as_f64().unwrap() > 0.0);
-}
-
-#[tokio::test]
 async fn status_reports_index_health() {
     let (status, headers, body) = get("/api/v1/status").await;
     assert_eq!(status, StatusCode::OK);
@@ -280,6 +245,282 @@ async fn status_reports_index_health() {
     assert_eq!(v["quality"]["ranking_config_version"], "v0.1.0");
     assert!(v["service"]["version"].is_string());
     assert_eq!(v["service"]["degraded"], false);
+}
+
+/// Build a state with a fresh index holding a single document.
+fn state_with(doc: IndexedDocument) -> Arc<AppState> {
+    let mut index = InMemoryIndex::new();
+    index.add(doc);
+    Arc::new(AppState {
+        reader: Arc::new(index),
+        ranker: Ranker::default(),
+        clock: None,
+        started_at: datetime!(2026-02-18 00:00 UTC),
+        security: lynx_api::middleware::SecurityContext::disabled(),
+    })
+}
+
+#[tokio::test]
+async fn negation_penalises_without_excluding() {
+    let mut clean = IndexedDocument::new(
+        DocumentId::from_canonical_url("https://a.test/"),
+        "https://a.test/",
+        "Rust programming",
+        "A systems language.",
+    );
+    clean.lang = Some("en".to_string());
+    let mut negated = IndexedDocument::new(
+        DocumentId::from_canonical_url("https://b.test/"),
+        "https://b.test/",
+        "Rust programming",
+        "A systems language that also mentions golang.",
+    );
+    negated.lang = Some("en".to_string());
+    let mut index = InMemoryIndex::new();
+    index.add(clean);
+    index.add(negated);
+    let state = Arc::new(AppState {
+        reader: Arc::new(index),
+        ranker: Ranker::default(),
+        clock: None,
+        started_at: datetime!(2026-02-18 00:00 UTC),
+        security: lynx_api::middleware::SecurityContext::disabled(),
+    });
+
+    let (_, _, body) = get_with(state, "/api/v1/search?q=rust+-golang&explain=1").await;
+    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+    // Both appear; the one containing the negated term is downranked.
+    assert_eq!(v["meta"]["returned"], 2);
+    assert_eq!(v["results"][0]["url"], "https://a.test/");
+    assert_eq!(
+        v["results"][0]["signals"]["negation"].as_f64().unwrap(),
+        0.0
+    );
+    assert!(v["results"][1]["signals"]["negation"].as_f64().unwrap() > 0.0);
+}
+
+#[tokio::test]
+async fn filetype_and_ext_filter_results() {
+    let mut index = InMemoryIndex::new();
+    let mut pdf = IndexedDocument::new(
+        DocumentId::from_canonical_url("https://a.test/guide.pdf"),
+        "https://a.test/guide.pdf",
+        "Rust guide",
+        "Rust systems programming",
+    );
+    pdf.content_type = Some("application/pdf".to_string());
+    let mut html = IndexedDocument::new(
+        DocumentId::from_canonical_url("https://b.test/"),
+        "https://b.test/",
+        "Rust guide",
+        "Rust systems programming",
+    );
+    html.content_type = Some("text/html".to_string());
+    index.add(pdf);
+    index.add(html);
+    let state = Arc::new(AppState {
+        reader: Arc::new(index),
+        ranker: Ranker::default(),
+        clock: None,
+        started_at: datetime!(2026-02-18 00:00 UTC),
+        security: lynx_api::middleware::SecurityContext::disabled(),
+    });
+    let (_, _, b1) = get_with(state.clone(), "/api/v1/search?q=rust+filetype:pdf").await;
+    let v: serde_json::Value = serde_json::from_str(&b1).unwrap();
+    assert_eq!(v["meta"]["returned"], 1);
+    assert_eq!(v["results"][0]["url"], "https://a.test/guide.pdf");
+    let (_, _, b2) = get_with(state, "/api/v1/search?q=rust+ext:pdf").await;
+    let v: serde_json::Value = serde_json::from_str(&b2).unwrap();
+    assert_eq!(v["meta"]["returned"], 1);
+}
+
+// ---------------------------------------------------------------------------
+// Middleware: security headers, request ids, rate limiting, fallbacks
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn every_search_response_carries_the_security_headers() {
+    let (status, headers, _) = get("/api/v1/search?q=rust").await;
+    assert_eq!(status, StatusCode::OK);
+    // `docs/api/errors.md` HTTP semantics + spec §P: the set is asserted here so it
+    // cannot be worn away silently.
+    for (name, expected) in [
+        ("content-security-policy", "default-src 'none'"),
+        ("x-content-type-options", "nosniff"),
+        ("x-frame-options", "DENY"),
+        ("referrer-policy", "no-referrer"),
+        ("cache-control", "no-store"),
+        ("vary", "Accept, Accept-Language"),
+    ] {
+        let got = headers
+            .get(name)
+            .unwrap_or_else(|| panic!("missing header {name}"))
+            .to_str()
+            .unwrap();
+        assert!(got.starts_with(expected), "{name} was {got:?}");
+    }
+    assert!(headers.get("x-request-id").is_some(), "request id present");
+}
+
+#[tokio::test]
+async fn status_keeps_its_cache_contract_and_still_gets_headers() {
+    let (_, headers, _) = get("/api/v1/status").await;
+    assert_eq!(
+        headers.get(header::CACHE_CONTROL).unwrap(),
+        "public, max-age=60"
+    );
+    assert!(headers.get("content-security-policy").is_some());
+    assert!(headers.get("x-request-id").is_some());
+}
+
+#[tokio::test]
+async fn well_formed_request_id_is_echoed_and_garbage_is_replaced() {
+    let valid = lynx_logging::RequestId::new().to_string();
+    let (_, headers, _) = get_with_header(seeded(), "x-request-id", &valid).await;
+    assert_eq!(
+        headers.get("x-request-id").map(|v| v.to_str().unwrap()),
+        Some(valid.as_str())
+    );
+
+    let (_, headers, _) =
+        get_with_header(seeded(), "x-request-id", "<script>alert(1)</script>").await;
+    let echoed = headers.get("x-request-id").unwrap().to_str().unwrap();
+    assert!(
+        lynx_logging::RequestId::parse(echoed).is_some(),
+        "garbage got fresh id"
+    );
+    assert_ne!(echoed, "<script>alert(1)</script>");
+}
+
+async fn get_with_header(
+    state: Arc<AppState>,
+    name: &str,
+    value: &str,
+) -> (StatusCode, axum::http::HeaderMap, String) {
+    let app = lynx_api::router::router(state);
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/search?q=rust")
+                .header(name, value)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    collect(resp).await
+}
+
+async fn collect(resp: axum::response::Response) -> (StatusCode, axum::http::HeaderMap, String) {
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (status, headers, String::from_utf8(bytes.to_vec()).unwrap())
+}
+
+#[tokio::test]
+async fn rate_limit_blocks_the_third_request_with_the_documented_envelope() {
+    let state = {
+        let mut s = AppState::default();
+        s.started_at = datetime!(2026-02-18 00:00 UTC);
+        s.security = lynx_api::middleware::SecurityContext::with_limit(2);
+        Arc::new(s)
+    };
+    let app = lynx_api::router::router(state.clone());
+    let mut last = None;
+    for _ in 0..3 {
+        last = Some(
+            app.clone()
+                .oneshot(
+                    Request::builder()
+                        .uri("/api/v1/search?q=rust")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap(),
+        );
+    }
+    let (status, headers, body) = collect(last.unwrap()).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(v["error"]["code"], "RATE_LIMITED");
+    assert_eq!(v["error"]["retryable"], true);
+    assert!(v["error"]["retry_after_ms"].as_u64().unwrap() > 0);
+    assert_eq!(v["error"]["detail"]["limit"], 2);
+    assert_eq!(v["error"]["detail"]["window_seconds"], 60);
+    assert!(headers.get("retry-after").is_some());
+    assert!(headers.get("x-request-id").is_some());
+    assert_eq!(headers.get("x-ratelimit-remaining").unwrap(), "0");
+}
+
+#[tokio::test]
+async fn unknown_paths_get_the_404_envelope_not_plain_text() {
+    let (status, _, body) = get("/api/v1/unknown").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(v["error"]["code"], "NOT_FOUND");
+    assert_eq!(v["error"]["status"], 404);
+}
+
+#[tokio::test]
+async fn hostile_url_schemes_render_as_text_not_links() {
+    let mut evil = IndexedDocument::new(
+        DocumentId::from_canonical_url("https://evil.test/"),
+        "javascript:alert(1)",
+        "Innocent title",
+        "Some body text.",
+    );
+    evil.lang = Some("en".to_string());
+    let (_, _, body) = get_with(state_with(evil), "/api/v1/search?q=innocent&format=html").await;
+    // The escaped javascript: URL must never become an href.
+    assert!(!body.contains(r#"href="javascript:"#));
+    assert!(body.contains("alert(1)"), "url text still shown, escaped");
+    assert!(body.contains("<span class=\"result-link\">"));
+    assert!(!body.contains("<a class=\"result-link\""));
+}
+
+#[tokio::test]
+async fn extreme_offset_does_not_panic() {
+    let (_, _, body) = get("/api/v1/search?q=rust&offset=18446744073709551615").await;
+    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+    // Attempting to page past the offset cap yields no results rather than a panic.
+    assert_eq!(v["meta"]["returned"], 0);
+}
+
+#[tokio::test]
+async fn truncated_query_carries_a_notice() {
+    let long_q = "rust ".repeat(200); // ~1000 bytes > the 512-byte cap
+    let (_, _, body) = get(&format!("/api/v1/search?q={}", urlencode(&long_q))).await;
+    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(v["meta"]["truncated"], true);
+    assert!(v["meta"]["notice"].is_string(), "the notice explains it");
+}
+
+#[tokio::test]
+async fn explain_defaults_off_and_opt_in_includes_signals() {
+    let (_, _, body) = get("/api/v1/search?q=rust").await;
+    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert!(v["results"][0]["signals"].is_null(), "signals are opt-in");
+
+    let (_, _, body) = get("/api/v1/search?q=rust&explain=1").await;
+    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert!(v["results"][0]["signals"].is_object());
+}
+
+#[tokio::test]
+async fn malformed_parameters_fall_back_to_defaults() {
+    // count=abc and non-UTF-8 bytes must not produce a 500 or a plain-text 400.
+    let (status, headers, body) = get("/api/v1/search?q=rust&count=abc").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        headers.get(header::CONTENT_TYPE).unwrap(),
+        "application/json"
+    );
+    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(v["meta"]["returned"], 1);
 }
 
 /// Percent-encode a string for safe use in a query string.

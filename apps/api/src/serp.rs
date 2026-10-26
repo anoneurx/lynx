@@ -97,11 +97,23 @@ fn results(h: &mut String, resp: &SearchResponse) {
     h.push_str("<ol id=\"results\" class=\"results\" aria-busy=\"false\">");
     for r in &resp.results {
         h.push_str("<li class=\"result\">");
-        h.push_str("<h2 class=\"title\"><a class=\"result-link\" href=\"");
-        h.push_str(&escape(&r.url));
-        h.push_str("\" rel=\"noreferrer noopener\">");
-        h.push_str(&escape(&r.title));
-        h.push_str("</a></h2>");
+        h.push_str("<h2 class=\"title\">");
+        // Only http and https can be a link. A poisoned index entry with another
+        // scheme (javascript:, data:, …) renders as inert text; escaping alone does
+        // not neutralise the scheme because URL-specced characters survive it.
+        let linkable = r.url.starts_with("https://") || r.url.starts_with("http://");
+        if linkable {
+            h.push_str("<a class=\"result-link\" href=\"");
+            h.push_str(&escape(&r.url));
+            h.push_str("\" rel=\"noreferrer noopener\">");
+            h.push_str(&escape(&r.title));
+            h.push_str("</a>");
+        } else {
+            h.push_str("<span class=\"result-link\">");
+            h.push_str(&escape(&r.title));
+            h.push_str("</span>");
+        }
+        h.push_str("</h2>");
         h.push_str("<p class=\"url\">");
         h.push_str(&escape(&display_url(&r.url)));
         h.push_str("</p>");
@@ -134,7 +146,7 @@ fn pagination(
         );
     }
     if has_more {
-        let next = offset + page_size.max(1);
+        let next = offset.saturating_add(page_size.max(1));
         let _ = write!(
             h,
             "<a rel=\"next\" href=\"{}&offset={next}\">Next</a>",
