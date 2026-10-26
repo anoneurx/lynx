@@ -9,6 +9,24 @@ engine yet.
 
 ## [Unreleased]
 
+### Changed (performance)
+
+- **`collection_stats` no longer rescans the corpus.** The Tantivy reader computes
+  average field lengths once, straight from the segments' inverted-index token totals,
+  caches it on the reader (`OnceLock`), and serves per-request reads from memory; the
+  old path fetched and re-tokenised every stored document on every search.
+- **Document frequency is a per-search lookup, not per candidate.** The old
+  `term_frequencies_for` issued a full-corpus `Count` query for every query token on
+  *every* candidate; DF is now computed once per query token and cached
+  (`DocumentFrequencyCache`) for the whole candidate list.
+- **Stored fields are tokenised once per candidate.** Field hits, per-term
+  frequencies, and field lengths all derive from one `FieldTokenCounts` map instead of
+  re-tokenising every field for every token (`O(tokens × fields × field length)`
+  previously).
+- **`GenerationBuilder::add` is O(1) amortised.** Documents update/remove through a
+  position map instead of a linear `find`/`retain`, so a full re-index is linear
+  rather than quadratic.
+
 ### Fixed (query/indexer correctness)
 
 - **Backend parity enforced.** A new `services/indexer/tests/parity.rs` loads the same

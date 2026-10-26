@@ -4,6 +4,7 @@
 //! trait and its value types, so the engine stays replaceable (see ADR-0002). This is the
 //! production reader; the in-memory [`crate::memory::InMemoryIndex`] is the reference.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Bound;
 use std::path::Path;
 
@@ -100,6 +101,10 @@ pub struct TantivyIndexReader {
     reader: IndexReader,
     fields: Fields,
     generation: IndexGeneration,
+    /// Corpus averages, computed once from the segments' inverted indexes and cached for
+    /// the lifetime of this reader ([`TantivyIndexReader`] is read-only: a new generation
+    /// means a new instance, so the cache cannot go stale).
+    stats: std::sync::OnceLock<CollectionStats>,
 }
 
 impl std::fmt::Debug for TantivyIndexReader {
@@ -287,6 +292,7 @@ impl TantivyIndexReader {
             reader,
             fields,
             generation,
+            stats: std::sync::OnceLock::new(),
         })
     }
 
@@ -353,6 +359,7 @@ impl TantivyIndexReader {
             reader,
             fields,
             generation,
+            stats: std::sync::OnceLock::new(),
         })
     }
 
@@ -619,13 +626,74 @@ fn date_of(doc: &TantivyDocument, field: Field) -> Option<OffsetDateTime> {
     opt_i64(doc, field).and_then(|s| OffsetDateTime::from_unix_timestamp(s).ok())
 }
 
+/// Frequency maps for a document's stored text fields, tokenised exactly once.
+struct FieldTokenCounts {
+    title: BTreeMap<String, u32>,
+    headings: BTreeMap<String, u32>,
+    body: BTreeMap<String, u32>,
+    anchors: BTreeMap<String, u32>,
+    url: BTreeMap<String, u32>,
+    alt: BTreeMap<String, u32>,
+}
+
+impl FieldTokenCounts {
+    #[allow(clippy::cast_possible_truncation)] // stored fields are far below 2^32 tokens
+    fn of(doc: &TantivyDocument, fields: &Fields) -> Self {
+        fn counts(text: &str) -> BTreeMap<String, u32> {
+            let mut map = BTreeMap::new();
+            for token in tokenize(text) {
+                let entry = map.entry(token).or_insert(0_u32);
+                *entry = entry.saturating_add(1);
+            }
+            map
+        }
+        Self {
+            title: counts(&text_of(doc, fields.title)),
+            headings: counts(&text_of(doc, fields.headings)),
+            body: counts(&text_of(doc, fields.body)),
+            anchors: counts(&text_of(doc, fields.anchors)),
+            url: counts(&text_of(doc, fields.url)),
+            alt: counts(&text_of(doc, fields.alt)),
+        }
+    }
+
+    fn hits(&self, token: &str) -> FieldHits {
+        let get = |map: &BTreeMap<String, u32>| map.get(token).copied().unwrap_or(0);
+        FieldHits {
+            title: get(&self.title),
+            headings: get(&self.headings),
+            body: get(&self.body),
+            anchors: get(&self.anchors),
+            url: get(&self.url),
+            alt: get(&self.alt),
+        }
+    }
+
+    /// Each field's token count — its `FieldLengths` value — summed from the maps.
+    #[allow(clippy::cast_possible_truncation)] // stored fields are far below 2^32 tokens
+    fn lengths(&self) -> FieldLengths {
+        let total =
+            |map: &BTreeMap<String, u32>| map.values().copied().fold(0_u32, u32::saturating_add);
+        FieldLengths {
+            title: total(&self.title),
+            headings: total(&self.headings),
+            body: total(&self.body),
+            anchors: total(&self.anchors),
+            url: total(&self.url),
+            alt: total(&self.alt),
+        }
+    }
+}
+
 /// Weighted term-frequency contribution across a document's stored text, used for
 /// field hits and the explanation. This is not Tantivy's BM25; it is a transparent
 /// stand-in so field-level provenance is inspectable.
+///
+/// `counts` must be built once per candidate with [`FieldTokenCounts::of`]; tokenising
+/// every field for every query token instead would be quadratic in the field lengths.
 #[allow(clippy::cast_precision_loss)] // term frequencies are tiny; f32 precision is ample
 fn field_hits_and_terms(
-    doc: &TantivyDocument,
-    fields: &Fields,
+    counts: &FieldTokenCounts,
     tokens: &[String],
     weights: &FieldWeights,
 ) -> (FieldHits, Vec<TermExplanation>, f32) {
@@ -633,20 +701,22 @@ fn field_hits_and_terms(
     let mut terms = Vec::new();
     let mut total = 0.0;
 
-    let sources: [(&str, Field, f32); 6] = [
-        ("title", fields.title, weights.title),
-        ("headings", fields.headings, weights.headings),
-        ("body", fields.body, weights.body),
-        ("anchors", fields.anchors, weights.anchors),
-        ("url", fields.url, weights.url),
-        ("alt", fields.alt, weights.alt),
+    let sources: [(&str, &BTreeMap<String, u32>, f32); 6] = [
+        ("title", &counts.title, weights.title),
+        ("headings", &counts.headings, weights.headings),
+        ("body", &counts.body, weights.body),
+        ("anchors", &counts.anchors, weights.anchors),
+        ("url", &counts.url, weights.url),
+        ("alt", &counts.alt, weights.alt),
     ];
 
+    let mut seen = BTreeSet::new();
     for token in tokens {
-        for (name, field, weight) in sources {
-            let text = text_of(doc, field);
-            let tf = u32::try_from(tokenize(&text).iter().filter(|t| *t == token).count())
-                .unwrap_or(u32::MAX);
+        if !seen.insert(token.as_str()) {
+            continue;
+        }
+        for (name, map, weight) in &sources {
+            let Some(&tf) = map.get(token) else { continue };
             if tf == 0 {
                 continue;
             }
@@ -654,11 +724,11 @@ fn field_hits_and_terms(
             total += contribution;
             terms.push(TermExplanation {
                 term: token.clone(),
-                field: name.to_string(),
+                field: (*name).to_string(),
                 tf,
                 contribution,
             });
-            match name {
+            match *name {
                 "title" => hits.title += tf,
                 "headings" => hits.headings += tf,
                 "body" => hits.body += tf,
@@ -669,23 +739,6 @@ fn field_hits_and_terms(
         }
     }
     (hits, terms, total)
-}
-
-/// Token count of a field's stored text.
-fn count_tokens(text: &str) -> u32 {
-    u32::try_from(tokenize(text).len()).unwrap_or(u32::MAX)
-}
-
-/// Per-field token counts of a document.
-fn field_lengths_of(doc: &TantivyDocument, fields: &Fields) -> FieldLengths {
-    FieldLengths {
-        title: count_tokens(&text_of(doc, fields.title)),
-        headings: count_tokens(&text_of(doc, fields.headings)),
-        body: count_tokens(&text_of(doc, fields.body)),
-        anchors: count_tokens(&text_of(doc, fields.anchors)),
-        url: count_tokens(&text_of(doc, fields.url)),
-        alt: count_tokens(&text_of(doc, fields.alt)),
-    }
 }
 
 /// Document frequency of `token` across all text fields.
@@ -699,44 +752,57 @@ fn document_frequency(searcher: &Searcher, text_fields: &[Field], token: &str) -
 }
 
 /// The per-term, per-field frequencies the ranker needs, for the terms present in `doc`.
+///
+/// `dfs` is the per-search document-frequency cache: DF is a corpus property, so it is
+/// looked up once per query token (`search()`) and shared by every candidate, instead of
+/// issuing a full-corpus `Count` query per candidate per token.
+///
+/// `counts` is the per-candidate token-frequency map ([`FieldTokenCounts::of`]), so the
+/// stored fields are tokenised once per candidate rather than once per token.
 fn term_frequencies_for(
-    searcher: &Searcher,
-    fields: &Fields,
-    doc: &TantivyDocument,
+    counts: &FieldTokenCounts,
     tokens: &[String],
+    dfs: &mut DocumentFrequencyCache<'_>,
 ) -> Vec<TermFrequency> {
-    let text_fields = fields.text();
     let mut seen = std::collections::BTreeSet::new();
     let mut out = Vec::new();
     for token in tokens {
-        if !seen.insert(token.clone()) {
+        if !seen.insert(token.as_str()) {
             continue;
         }
-        let tf = FieldHits {
-            title: count_token(&text_of(doc, fields.title), token),
-            headings: count_token(&text_of(doc, fields.headings), token),
-            body: count_token(&text_of(doc, fields.body), token),
-            anchors: count_token(&text_of(doc, fields.anchors), token),
-            url: count_token(&text_of(doc, fields.url), token),
-            alt: count_token(&text_of(doc, fields.alt), token),
-        };
+        let tf = counts.hits(token);
         if tf == FieldHits::default() {
             continue;
         }
         out.push(TermFrequency {
             term: token.clone(),
-            df: document_frequency(searcher, &text_fields, token),
+            df: dfs.get(token),
             tf,
         });
     }
     out
 }
 
-/// Count a token's occurrences in `text`.
-fn count_token(text: &str, token: &str) -> u32 {
-    u32::try_from(tokenize(text).iter().filter(|t| *t == token).count()).unwrap_or(u32::MAX)
+/// A per-search cache of document frequencies: query token → corpus DF.
+struct DocumentFrequencyCache<'a> {
+    searcher: &'a Searcher,
+    text_fields: &'a [Field],
+    values: BTreeMap<String, u64>,
 }
 
+impl DocumentFrequencyCache<'_> {
+    /// The corpus DF of `token`, computing it on first use.
+    fn get(&mut self, token: &str) -> u64 {
+        if let Some(&cached) = self.values.get(token) {
+            return cached;
+        }
+        let df = document_frequency(self.searcher, self.text_fields, token);
+        self.values.insert(token.to_string(), df);
+        df
+    }
+}
+
+/// Document frequency of `token` across all text fields.
 #[allow(clippy::too_many_arguments)] // one value type per argument keeps the call site flat
 fn candidate_of(
     doc: &TantivyDocument,
@@ -782,18 +848,50 @@ impl SearchIndexReader for TantivyIndexReader {
     }
 
     fn collection_stats(&self) -> Result<CollectionStats> {
-        let searcher = self.reader.searcher();
-        let top = searcher
-            .search(&AllQuery, &TopDocs::with_limit(SCAN_LIMIT))
-            .map_err(|e| IndexError::Internal(e.to_string()))?;
-        let mut lengths = Vec::with_capacity(top.len());
-        for (_, address) in top {
-            let doc: TantivyDocument = searcher
-                .doc(address)
-                .map_err(|e| IndexError::Corrupt(e.to_string()))?;
-            lengths.push(field_lengths_of(&doc, &self.fields));
+        // Averaged once per reader, never per request: the totals come straight from the
+        // segments' inverted indexes (which count exactly the tokens the registered LYNX
+        // tokenizer produced), so no stored field is re-tokenised or fetched.
+        if let Some(cached) = self.stats.get() {
+            return Ok(*cached);
         }
-        Ok(CollectionStats::from_field_lengths(lengths))
+        let searcher = self.reader.searcher();
+        let text_fields = self.fields.text();
+        let mut totals = [0_u64; 6];
+        for segment in searcher.segment_readers() {
+            for (slot, &field) in text_fields.iter().enumerate() {
+                let index = segment
+                    .inverted_index(field)
+                    .map_err(|e| IndexError::Corrupt(e.to_string()))?;
+                totals[slot] = totals[slot].saturating_add(index.total_num_tokens());
+            }
+        }
+        // `Fields::text` is [title, headings, anchors, url, alt, body]; the averages
+        // struct is (title, headings, body, anchors, url, alt).
+        let [title, headings, anchors, url, alt, body] = totals;
+        let doc_count = searcher.num_docs();
+        let stats = if doc_count == 0 {
+            CollectionStats::default()
+        } else {
+            #[allow(clippy::cast_precision_loss)] // token counts fit f32 exactly
+            #[allow(clippy::cast_possible_truncation)] // an average field length barely spans f32's range
+            fn average(total_tokens: u64, doc_count: u64) -> f32 {
+                ((total_tokens as f64) / f64::from(u32::try_from(doc_count).unwrap_or(u32::MAX)))
+                    as f32
+            }
+            CollectionStats {
+                doc_count,
+                avg: crate::reader::AvgFieldLengths {
+                    title: average(title, doc_count),
+                    headings: average(headings, doc_count),
+                    body: average(body, doc_count),
+                    anchors: average(anchors, doc_count),
+                    url: average(url, doc_count),
+                    alt: average(alt, doc_count),
+                },
+            }
+        };
+        let _ = self.stats.set(stats);
+        Ok(stats)
     }
 
     fn search(&self, plan: &QueryPlan, opts: &SearchOptions) -> Result<Vec<Candidate>> {
@@ -805,6 +903,12 @@ impl SearchIndexReader for TantivyIndexReader {
             .map_err(|e| IndexError::Internal(e.to_string()))?;
 
         let tokens = query_tokens(plan);
+        let text_fields = self.fields.text();
+        let mut dfs = DocumentFrequencyCache {
+            searcher: &searcher,
+            text_fields: &text_fields,
+            values: BTreeMap::new(),
+        };
 
         let mut out = Vec::new();
         for (score, address) in top {
@@ -827,10 +931,11 @@ impl SearchIndexReader for TantivyIndexReader {
             ) {
                 continue;
             }
-            let (hits, _terms, _standin) =
-                field_hits_and_terms(&doc, &self.fields, &tokens, &opts.weights);
-            let field_lengths = field_lengths_of(&doc, &self.fields);
-            let terms = term_frequencies_for(&searcher, &self.fields, &doc, &tokens);
+            let counts = FieldTokenCounts::of(&doc, &self.fields);
+            // Field lengths are the token counts the same pass just produced.
+            let field_lengths = counts.lengths();
+            let (hits, _terms, _standin) = field_hits_and_terms(&counts, &tokens, &opts.weights);
+            let terms = term_frequencies_for(&counts, &tokens, &mut dfs);
             out.push(candidate_of(
                 &doc,
                 &self.fields,
@@ -936,8 +1041,9 @@ impl SearchIndexReader for TantivyIndexReader {
             .doc(address)
             .map_err(|e| IndexError::Corrupt(e.to_string()))?;
         let tokens = positive_tokens(plan);
+        let counts = FieldTokenCounts::of(&doc, &self.fields);
         let (_hits, terms, total) =
-            field_hits_and_terms(&doc, &self.fields, &tokens, &FieldWeights::default());
+            field_hits_and_terms(&counts, &tokens, &FieldWeights::default());
         Ok(Explanation {
             doc_id,
             bm25: total,

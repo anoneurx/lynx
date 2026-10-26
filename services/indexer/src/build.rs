@@ -57,6 +57,9 @@ pub struct GenerationBuilder {
     docs: Vec<IndexedDocument>,
     /// Content hash of the version currently held for each document, for idempotency.
     hashes: BTreeMap<DocumentId, String>,
+    /// Position of each held document in `docs`, so an update is O(1) instead of a
+    /// linear `find` that makes a full re-index O(n²).
+    positions: std::collections::HashMap<DocumentId, usize>,
     tokenizer_version: String,
     ranking_config_version: String,
     created_at: OffsetDateTime,
@@ -70,6 +73,7 @@ impl GenerationBuilder {
         Self {
             docs: Vec::new(),
             hashes: BTreeMap::new(),
+            positions: std::collections::HashMap::new(),
             tokenizer_version: TOKENIZER_VERSION.to_string(),
             ranking_config_version: RANKING_CONFIG_VERSION.to_string(),
             created_at,
@@ -116,8 +120,7 @@ impl GenerationBuilder {
         if parsed.noindex {
             // The document asked not to be indexed. Honor it and drop any previously
             // indexed version so the live index matches the site's current instruction.
-            self.hashes.remove(&doc_id);
-            self.docs.retain(|d| d.doc_id != doc_id);
+            self.remove(&doc_id);
             return AddOutcome::Rejected("noindex");
         }
 
@@ -126,20 +129,38 @@ impl GenerationBuilder {
         }
 
         let Some(indexed) = to_indexed_document(doc_id, &parsed) else {
-            // The new version has nothing to index. Drop any stale entry so the live index
-            // matches the source of truth (pipeline.md § Failure behaviour).
-            self.hashes.remove(&doc_id);
-            self.docs.retain(|d| d.doc_id != doc_id);
+            // The new version has nothing to index. Drop any stale entry so the live
+            // index matches the source of truth (pipeline.md § Failure behaviour).
+            self.remove(&doc_id);
             return AddOutcome::Rejected("empty_text");
         };
 
-        if let Some(slot) = self.docs.iter_mut().find(|d| d.doc_id == doc_id) {
-            *slot = indexed;
+        if let Some(&slot) = self.positions.get(&doc_id) {
+            self.docs[slot] = indexed;
         } else {
+            self.positions.insert(doc_id, self.docs.len());
             self.docs.push(indexed);
         }
         self.hashes.insert(doc_id, parsed.content_hash);
         AddOutcome::Indexed
+    }
+
+    /// Drop a document (and its position entry), keeping the position map consistent.
+    ///
+    /// `swap_remove` reorders `docs`, so the displaced document's position is updated;
+    /// `build()` sorts by id anyway, so iteration order is not observable.
+    fn remove(&mut self, doc_id: &DocumentId) {
+        self.hashes.remove(doc_id);
+        let Some(slot) = self.positions.remove(doc_id) else {
+            return;
+        };
+        let last = self.docs.len() - 1;
+        let moved = self.docs[last].doc_id;
+        self.docs.swap_remove(slot);
+        // When the removed document was not the last, the displaced one takes its slot.
+        if slot < last {
+            self.positions.insert(moved, slot);
+        }
     }
 
     /// Number of documents currently held.
