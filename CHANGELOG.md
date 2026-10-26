@@ -9,6 +9,35 @@ engine yet.
 
 ## [Unreleased]
 
+### Added (implementation Step 14 — suggestions service)
+
+- **Suggestions completion pipeline** (§Z Step 14). `lynx-indexer` readers gained the
+  `suggest_candidates(prefix, limit)` trait method with a parity-enforced contract: a
+  term's doc frequency is per-field df summed across segments, max across the six text
+  fields; title candidates are the first ≤ 4 lowercased tokens of a document title with
+  the count of documents whose title opens with that phrase. Both backends implement it:
+  the in-memory reader scans per-field token maps by prefix range, and the Tantivy reader
+  scans each segment's term dictionary with a prefix byte automaton (`StartsPrefixAutomaton`,
+  built on `tantivy-fst` — tantivy 0.22 ships no prefix automaton) plus a lazily-built,
+  immutable title-phrase table stored in a `OnceLock`.
+- **`lynx-suggestions` ranking** implements the documented score
+  (`0.40·corpus-frequency + 0.25·title-bonus + 0.20·co-occurrence (0.0 in v0.1) +
+  0.15·length-prior`), case-insensitive deduplication keeping the best-supported
+  candidate, deterministic `(score desc, text asc)` ordering, and an output-side
+  denylist as defence in depth (never on the index).
+- **`GET /api/v1/suggestions`** serves typeahead per `docs/api/suggestions.md`: `q`
+  (trimmed, ≤ 128 bytes), `limit` clamped 1–10 (default 8), `scope`
+  (`all|titles|terms|related`, unknown scopes fall back to `all` with a
+  `meta.notice`, and `related` answers empty with a notice — page-level in v0.1),
+  interface language from `interface_lang` or `Accept-Language`, `Cache-Control:
+  public, max-age=300` (the security middleware now treats it as a cacheable endpoint
+  like `/status`), short prefixes (0–1 chars) answered with `200 []` without touching
+  the index, and no write path anywhere in the handler.
+- **Backend parity tests** for suggestions join the existing parity fence: identical
+  candidate sets and working-set sizes between the in-memory and Tantivy readers, and
+  unit/e2e tests for ranking, scopes, clamping, determinism, and the empty-answer
+  contract.
+
 ### Hardened (crawler security)
 
 - **IPv6 deny set completed.** Teredo `2001:0::/32` (obfuscated client part, denied whole

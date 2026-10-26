@@ -11,9 +11,10 @@ use lynx_query::QueryPlan;
 use time::OffsetDateTime;
 
 use crate::reader::{
-    passes_filters, Candidate, CollectionStats, DocId, DocumentMetadata, Explanation, FieldHits,
-    FieldLengths, FieldWeights, IndexGeneration, Result, SearchIndexReader, SearchOptions,
-    TermExplanation, TermFrequency,
+    passes_filters, title_prefix_phrase, Candidate, CollectionStats, DocId, DocumentMetadata,
+    Explanation, FieldHits, FieldLengths, FieldWeights, IndexGeneration, Result, SearchIndexReader,
+    SearchOptions, SuggestionCandidate, SuggestionKind, TermExplanation, TermFrequency,
+    MIN_SUGGESTION_PREFIX_LEN,
 };
 use crate::tokenizer::{term_frequencies, tokenize};
 /// A document to be added to the in-memory index.
@@ -610,6 +611,78 @@ impl SearchIndexReader for InMemoryIndex {
                 ranking_config_version: d.ranking_config_version.clone(),
             }
         }))
+    }
+
+    fn suggest_candidates(&self, prefix: &str, limit: usize) -> Result<Vec<SuggestionCandidate>> {
+        let prefix = prefix.trim().to_ascii_lowercase();
+        if limit == 0 || prefix.len() < MIN_SUGGESTION_PREFIX_LEN {
+            return Ok(Vec::new());
+        }
+        // Terms: document frequency per field, folded into a merged map as the max
+        // across fields — the same definition the Tantivy reader uses. BTreeMap keys
+        // compare byte-wise, so the tail after `prefix` is exactly the prefixed run.
+        let mut per_field: [BTreeMap<String, u32>; 6] = Default::default();
+        for stored in &self.docs {
+            for (slot, map) in [
+                &stored.title_tf,
+                &stored.headings_tf,
+                &stored.body_tf,
+                &stored.anchors_tf,
+                &stored.url_tf,
+                &stored.alt_tf,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                for (token, _) in map.range(prefix.clone()..) {
+                    if !token.starts_with(prefix.as_str()) {
+                        break;
+                    }
+                    *per_field[slot].entry(token.clone()).or_insert(0) += 1;
+                }
+            }
+        }
+        let mut merged_term_dfs: BTreeMap<String, u32> = BTreeMap::new();
+        for field_map in &per_field {
+            for (term, df) in field_map {
+                merged_term_dfs
+                    .entry(term.clone())
+                    .and_modify(|current| *current = (*current).max(*df))
+                    .or_insert(*df);
+            }
+        }
+
+        let mut out: Vec<SuggestionCandidate> = merged_term_dfs
+            .into_iter()
+            .take(limit)
+            .map(|(text, doc_count)| SuggestionCandidate {
+                text,
+                kind: SuggestionKind::Term,
+                doc_count,
+            })
+            .collect();
+
+        // Titles: the documents whose title *begins* with the prefix, one candidate per
+        // distinct opening phrase.
+        let mut title_counts: BTreeMap<String, u32> = BTreeMap::new();
+        for stored in &self.docs {
+            if let Some(phrase) = title_prefix_phrase(&stored.doc.title) {
+                if phrase.starts_with(prefix.as_str()) {
+                    *title_counts.entry(phrase).or_insert(0) += 1;
+                }
+            }
+        }
+        out.extend(
+            title_counts
+                .into_iter()
+                .take(limit)
+                .map(|(text, doc_count)| SuggestionCandidate {
+                    text,
+                    kind: SuggestionKind::Title,
+                    doc_count,
+                }),
+        );
+        Ok(out)
     }
 
     #[allow(clippy::cast_precision_loss)] // term frequencies are tiny; f32 precision is ample

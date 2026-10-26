@@ -10,6 +10,7 @@ use axum::{
     response::IntoResponse,
 };
 use lynx_common::time::Clock;
+use lynx_indexer::SuggestionKind;
 use lynx_ranker::RankedResult;
 
 use crate::errors::ApiErrorKind;
@@ -115,6 +116,94 @@ pub async fn search(
             json,
         ))
     }
+}
+
+use serde_json::to_string;
+
+/// `GET /api/v1/suggestions`.
+///
+/// Typeahead built from the index, never from a query log (there are none —
+/// `docs/api/suggestions.md`). The handler writes nothing anywhere: the prefix is a
+/// request parameter that exists only for this response. Responses are marked
+/// `Cache-Control: public, max-age=300` because completion sets move with the index,
+/// not with users, and every user's response is identical.
+///
+/// A prefix shorter than two characters is answered with `200 []` — an empty list is a
+/// normal answer, not a failure, and the client should not have called at all.
+///
+/// # Errors
+/// Returns [`ApiErrorKind::IndexUnavailable`] when the index cannot be read.
+#[allow(clippy::unused_async)]
+pub async fn suggestions(
+    State(state): State<Arc<AppState>>,
+    RawQuery(raw): RawQuery,
+    headers: axum::http::HeaderMap,
+) -> Result<impl IntoResponse, ApiErrorKind> {
+    let start = Instant::now();
+    let accept_language = headers
+        .get(axum::http::header::ACCEPT_LANGUAGE)
+        .and_then(|v| v.to_str().ok());
+    let params = crate::models::SuggestQuery::from_raw_query(raw.as_deref(), accept_language);
+    let prefix = params.prefix();
+    let notice = params.scope_notice();
+    let language = params.language.clone();
+
+    // Short prefixes skip the index entirely: `q` of 0–1 characters is documented as a
+    // successful empty response.
+    if lynx_indexer::reader::MIN_SUGGESTION_PREFIX_LEN.gt(&prefix.chars().count()) {
+        let gen = state.reader.generation();
+        let resp =
+            crate::models::SuggestResponse::empty(&prefix, language, &gen, elapsed_ms(&start));
+        return Ok(json_ok(&resp));
+    }
+
+    // `related` is a page-level feature in v0.1: documented as empty here, with a notice.
+    let completions = if params.scope.as_str() == "related" {
+        Vec::new()
+    } else {
+        let cands = state
+            .reader
+            .suggest_candidates(&prefix, params.clamped_limit())
+            .map_err(|_| ApiErrorKind::IndexUnavailable)?;
+        let wanted: Vec<_> = cands
+            .into_iter()
+            .filter(|c| match c.kind {
+                SuggestionKind::Term => params.wants_terms(),
+                SuggestionKind::Title => params.wants_titles(),
+            })
+            .collect();
+        lynx_suggestions::complete(&prefix, &wanted, params.clamped_limit())
+    };
+
+    let gen = state.reader.generation();
+    let resp = crate::models::SuggestResponse::from_completions(
+        &prefix,
+        language,
+        completions,
+        &gen,
+        elapsed_ms(&start),
+        notice,
+    );
+    Ok(json_ok(&resp))
+}
+
+/// A suggestions response: JSON with the shared-cache TTL the spec fixes for typeahead.
+fn json_ok(
+    resp: &crate::models::SuggestResponse,
+) -> (StatusCode, [(axum::http::HeaderName, String); 2], String) {
+    (
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "application/json".to_string()),
+            (header::CACHE_CONTROL, "public, max-age=300".to_string()),
+        ],
+        to_string(resp).unwrap_or_default(),
+    )
+}
+
+/// Milliseconds between `start` and now, clamped to the response type's range.
+fn elapsed_ms(start: &Instant) -> u64 {
+    start.elapsed().as_millis().try_into().unwrap_or(u64::MAX)
 }
 
 /// Index of the first result strictly after the cursor position in ranked order.

@@ -6,8 +6,9 @@
 //!    id is honoured only when it parses as a UUID, so it cannot be used to inject
 //!    content into logs.
 //! 2. **Security headers** — the canonical set from [`lynx_security::headers`], applied
-//!    centrally so no handler can forget it. `/api/v1/status` keeps its own
-//!    `Cache-Control: public, max-age=60`; everything else is `no-store`.
+//!    centrally so no handler can forget it. The documented cacheable endpoints
+//!    (`/api/v1/status`, `/api/v1/suggestions`) keep their own `Cache-Control`;
+//!    everything else is `no-store`.
 //! 3. **Rate limiting** — the rotating salted prefix-bucket limiter from
 //!    [`lynx_security::ratelimit`], keyed on the daily-rotating HMAC of the client
 //!    network prefix. The limiter sees no query text and stores nothing durable.
@@ -219,16 +220,17 @@ pub async fn attach_request_id(req: Request<Body>, next: Next) -> Response {
 
 /// Middleware 2: apply the canonical security headers to every response.
 ///
-/// `/api/v1/status` is the one documented cacheable endpoint; it keeps whichever
-/// `Cache-Control`/`Pragma` the handler set and still receives every other header.
-/// `Vary: Accept, Accept-Language` is inserted when the handler did not set it.
+/// `/api/v1/status` and `/api/v1/suggestions` are the documented cacheable endpoints;
+/// they keep whichever `Cache-Control`/`Pragma` the handler set and still receive every
+/// other header. `Vary: Accept, Accept-Language` is inserted when the handler did not
+/// set it.
 pub async fn apply_security_headers(
     State(state): State<Arc<AppState>>,
     req: Request<Body>,
     next: Next,
 ) -> Response {
     let path = req.uri().path().to_string();
-    let cacheable = path == "/api/v1/status";
+    let cacheable = path == "/api/v1/status" || path == "/api/v1/suggestions";
     let settings = &state.security.settings;
     let mut resp = next.run(req).await;
     let headers = resp.headers_mut();

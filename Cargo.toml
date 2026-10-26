@@ -84,6 +84,9 @@ zeroize = "1"
 # data
 sqlx = { version = "0.7", features = ["postgres", "runtime-tokio", "macros", "json", "time", "uuid"] }
 tantivy = "0.22"
+# Same fork tantivy 0.22 uses internally; needed to build prefix automata for the
+# suggestion dictionaries without going through tantivy's private paths.
+tantivy-fst = "0.5"
 
 # networking / text
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "http2"] }
@@ -122,6 +125,7 @@ lynx-security = { path = "packages/security" }
 lynx-query = { path = "services/query" }
 lynx-ranker = { path = "services/ranker" }
 lynx-indexer = { path = "services/indexer" }
+lynx-suggestions = { path = "services/suggestions" }
 lynx-parser = { path = "services/parser" }
 lynx-storage = { path = "services/storage" }
 lynx-frontier = { path = "services/frontier" }

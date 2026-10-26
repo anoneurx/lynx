@@ -185,6 +185,49 @@ fn assert_match(q: &str, memory: &dyn SearchIndexReader, tantivy: &dyn SearchInd
     assert_eq!(a_count, b_count, "{title}: counts diverge");
 }
 
+/// The suggestion dictionaries are a second contract both backends own. A diverging
+/// tokeniser, a different df definition, or a missing title table shows up here.
+fn assert_suggestions_agree(
+    prefix: &str,
+    memory: &dyn SearchIndexReader,
+    tantivy: &dyn SearchIndexReader,
+) {
+    let a = memory.suggest_candidates(prefix, 10).unwrap();
+    let b = tantivy.suggest_candidates(prefix, 10).unwrap();
+    let a_set: BTreeSet<_> = a
+        .iter()
+        .map(|c| (c.text.as_str(), c.kind, c.doc_count))
+        .collect();
+    let b_set: BTreeSet<_> = b
+        .iter()
+        .map(|c| (c.text.as_str(), c.kind, c.doc_count))
+        .collect();
+    assert_eq!(
+        a_set, b_set,
+        "prefix {prefix:?}: suggestion candidates diverge"
+    );
+}
+
+#[test]
+fn suggestions_match_between_backends() {
+    let (memory, tantivy) = both();
+    for prefix in ["rust", "ru", "tok", "async run", "an", "zzz", "go prog"] {
+        assert_suggestions_agree(prefix, &memory, &tantivy);
+    }
+}
+
+#[test]
+fn suggestion_limits_match_between_backends() {
+    let (memory, tantivy) = both();
+    for limit in [0, 1, 3, 10] {
+        assert_eq!(
+            memory.suggest_candidates("ru", limit).unwrap().len(),
+            tantivy.suggest_candidates("ru", limit).unwrap().len(),
+            "limit {limit}: working-set size diverges"
+        );
+    }
+}
+
 #[test]
 fn conjunction_matches_identically() {
     let (memory, tantivy) = both();

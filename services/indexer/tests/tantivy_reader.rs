@@ -15,7 +15,7 @@
 use lynx_common::ids::DocumentId;
 use lynx_indexer::{
     AddOutcome, GenerationBuilder, IndexGeneration, IndexedDocument, SearchIndexReader,
-    SearchOptions, TantivyIndexReader,
+    SearchOptions, SuggestionCandidate, SuggestionKind, TantivyIndexReader,
 };
 use lynx_models::domain::ParsedDocument;
 use lynx_query::{parse, QueryPlan};
@@ -327,4 +327,52 @@ fn reopening_preserves_generation_manifest() {
 fn open_missing_generation_is_unavailable() {
     let dir = tempfile::tempdir().unwrap();
     assert!(TantivyIndexReader::open(dir.path()).is_err());
+}
+
+#[test]
+fn suggestions_scan_every_field_dictionary_and_carry_corpus_support() {
+    let index = sample();
+    // `rust` appears in the bodies of docs 1, 3, and 4; `runtime` in doc 1 only.
+    let cands = index.suggest_candidates("ru", 8).unwrap();
+    assert!(cands.contains(&SuggestionCandidate {
+        text: "rust".to_string(),
+        kind: SuggestionKind::Term,
+        doc_count: 3,
+    }));
+    assert!(cands.contains(&SuggestionCandidate {
+        text: "runtime".to_string(),
+        kind: SuggestionKind::Term,
+        doc_count: 1,
+    }));
+}
+
+#[test]
+fn suggestions_include_title_openings_and_fold_case() {
+    let index = sample();
+    let cands = index.suggest_candidates("TOK", 8).unwrap();
+    assert!(cands.contains(&SuggestionCandidate {
+        text: "tokio".to_string(),
+        kind: SuggestionKind::Term,
+        doc_count: 1,
+    }));
+    assert!(cands.contains(&SuggestionCandidate {
+        text: "tokio async runtime".to_string(),
+        kind: SuggestionKind::Title,
+        doc_count: 1,
+    }));
+    // The title phrase is *not* double counted as a term.
+    assert!(!cands.contains(&SuggestionCandidate {
+        text: "tokio async runtime".to_string(),
+        kind: SuggestionKind::Term,
+        doc_count: 1,
+    }));
+}
+
+#[test]
+fn suggestions_reject_short_prefixes_and_honour_the_limit() {
+    let index = sample();
+    assert!(index.suggest_candidates("r", 8).unwrap().is_empty());
+    assert!(index.suggest_candidates("", 8).unwrap().is_empty());
+    assert_eq!(index.suggest_candidates("ru", 1).unwrap().len(), 1);
+    assert!(index.suggest_candidates("zzz", 8).unwrap().is_empty());
 }

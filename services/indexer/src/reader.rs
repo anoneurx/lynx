@@ -360,6 +360,19 @@ pub trait SearchIndexReader: Send + Sync {
     /// Returns [`IndexError`] when the index cannot be read.
     fn document(&self, doc_id: DocId) -> Result<Option<DocumentMetadata>>;
 
+    /// Corpus-derived suggestion candidates for a typed `prefix`.
+    ///
+    /// The prefix is compared case-insensitively; below
+    /// [`MIN_SUGGESTION_PREFIX_LEN`] the result is empty. Sources are the index term
+    /// dictionary and document-title openings (≤ [`MAX_SUGGESTION_WORDS`] words) —
+    /// never a query log, because none exists. Results are a working set: at most
+    /// `limit` per source, unranked; scoring and final ordering happen in
+    /// `lynx-suggestions`.
+    ///
+    /// # Errors
+    /// Returns [`IndexError`] when the index cannot be read.
+    fn suggest_candidates(&self, prefix: &str, limit: usize) -> Result<Vec<SuggestionCandidate>>;
+
     /// Explain the lexical score of a document for `plan`.
     ///
     /// # Errors
@@ -445,4 +458,83 @@ pub fn passes_filters(
         }
     }
     true
+}
+
+/// A corpus-derived suggestion candidate, straight from the index and unranked.
+///
+/// Ranked, scored completions live in `lynx-suggestions`; this is the raw material the
+/// readers produce.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SuggestionCandidate {
+    /// The full suggested string, ready to replace what the user typed.
+    pub text: String,
+    /// Which corpus dictionary produced it.
+    pub kind: SuggestionKind,
+    /// Corpus support: how many documents back this string.
+    pub doc_count: u32,
+}
+
+/// The corpus dictionary a suggestion candidate came from.
+///
+/// There is deliberately no `History` or `Popular`: LYNX has no query logs, by design,
+/// so every suggestion is content-derived.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SuggestionKind {
+    /// An index term (a single token with corpus-wide document support).
+    Term,
+    /// The first tokens of a document title (at most 4 words, per the suggestion
+    /// output policy).
+    Title,
+}
+
+impl SuggestionKind {
+    /// A stable lowercase token, matching the API contract (`terms` / `titles`).
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Term => "terms",
+            Self::Title => "titles",
+        }
+    }
+}
+
+/// Suggestions carry at most this many words.
+pub const MAX_SUGGESTION_WORDS: usize = 4;
+
+/// The lowercased prefix that starts a suggestion lookup. Below this the suggestion
+/// space is noise; the API answers an empty list.
+pub const MIN_SUGGESTION_PREFIX_LEN: usize = 2;
+
+/// The title's opening phrase as a suggestion candidate: the first tokens, at most
+/// [`MAX_SUGGESTION_WORDS`], lowercased and space-joined. `None` when the title has no
+/// tokens.
+///
+/// Suggestions are truncated to 4 words by policy: it removes most explicit phrasing
+/// and keeps the dictionary bounded per document.
+#[must_use]
+pub fn title_prefix_phrase(title: &str) -> Option<String> {
+    crate::tokenizer::tokenize(title)
+        .into_iter()
+        .take(MAX_SUGGESTION_WORDS)
+        .reduce(|a, b| format!("{a} {b}"))
+}
+
+#[cfg(test)]
+mod suggestion_tests {
+    use super::*;
+
+    #[test]
+    fn title_phrase_is_the_first_tokens_lowercase() {
+        assert_eq!(
+            title_prefix_phrase("The Async Runtime Guide"),
+            Some("the async runtime guide".to_string())
+        );
+        assert_eq!(title_prefix_phrase(""), None);
+        // Punctuation folds away, exactly as it does at query time.
+        assert_eq!(
+            title_prefix_phrase("Ｒｕｓｔ, Async!!"),
+            Some("rust async".to_string())
+        );
+    }
 }

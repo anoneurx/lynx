@@ -10,6 +10,7 @@ authors.workspace = true
 
 [dependencies]
 lynx-common.workspace = true
+lynx-indexer.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true

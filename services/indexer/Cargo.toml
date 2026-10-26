@@ -12,7 +12,7 @@ authors.workspace = true
 default = []
 # The real Tantivy-backed reader and generation writer. Off by default so consumers and
 # tests never need the engine in the loop.
-tantivy = ["dep:tantivy", "dep:serde_json"]
+tantivy = ["dep:tantivy", "dep:tantivy-fst", "dep:serde_json"]
 
 [dependencies]
 lynx-common = { workspace = true, features = ["serde"] }
@@ -24,6 +24,7 @@ thiserror.workspace = true
 time.workspace = true
 url.workspace = true
 tantivy = { workspace = true, optional = true }
+tantivy-fst = { workspace = true, optional = true }
 
 [dev-dependencies]
 pretty_assertions.workspace = true

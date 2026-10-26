@@ -32,6 +32,7 @@ fn redacted_span(req: &Request<Body>) -> tracing::Span {
 pub fn router(state: Arc<AppState>) -> Router {
     let app = Router::new()
         .route("/api/v1/search", get(crate::handlers::search))
+        .route("/api/v1/suggestions", get(crate::handlers::suggestions))
         .route("/api/v1/status", get(crate::handlers::status))
         .fallback(not_found)
         .layer(

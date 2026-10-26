@@ -422,3 +422,222 @@ impl StatusResponse {
         }
     }
 }
+
+/// Default number of completions per suggestions response.
+pub const SUGGEST_DEFAULT_LIMIT: usize = 8;
+/// Hard cap on completions per suggestions response.
+pub const SUGGEST_MAX_LIMIT: usize = 10;
+/// The longest prefix a suggestions request accepts; longer input is truncated.
+pub const SUGGEST_MAX_PREFIX_BYTES: usize = 128;
+
+/// The `GET /api/v1/suggestions` request parameters, parsed with the same tolerance as
+/// search: unparseable values fall back to defaults, never a 500.
+#[derive(Debug)]
+pub struct SuggestQuery {
+    pub q: String,
+    pub limit: usize,
+    pub scope: String,
+    pub language: Option<String>,
+}
+
+impl SuggestQuery {
+    /// Parse the raw query string, and seed the interface language from
+    /// `Accept-Language` when the explicit `interface_lang` parameter is absent.
+    #[must_use]
+    pub fn from_raw_query(raw: Option<&str>, accept_language: Option<&str>) -> Self {
+        let mut this = Self {
+            q: String::new(),
+            limit: SUGGEST_DEFAULT_LIMIT,
+            scope: "all".to_string(),
+            language: None,
+        };
+        if let Some(raw) = raw {
+            for pair in raw.split('&') {
+                let Some((key, value)) = pair.split_once('=') else {
+                    continue;
+                };
+                let key = decode_component(key);
+                let value = decode_component(value);
+                match key.as_str() {
+                    "q" => this.q = value,
+                    "limit" => {
+                        if let Ok(n) = value.trim().parse::<usize>() {
+                            this.limit = n;
+                        }
+                    }
+                    "scope" => this.scope = value.to_ascii_lowercase(),
+                    "interface_lang" | "lang" => this.language = Some(value),
+                    _ => {}
+                }
+            }
+        }
+        if this.language.is_none() {
+            this.language = first_accept_language(accept_language);
+        }
+        this
+    }
+
+    /// The effective limit, clamped to the documented range.
+    #[must_use]
+    pub fn clamped_limit(&self) -> usize {
+        self.limit.clamp(1, SUGGEST_MAX_LIMIT)
+    }
+
+    /// The prefix to complete: trimmed, then truncated at 128 bytes on a character
+    /// boundary (`docs/api/suggestions.md` request contract).
+    #[must_use]
+    pub fn prefix(&self) -> String {
+        let trimmed = self.q.trim();
+        if trimmed.len() <= SUGGEST_MAX_PREFIX_BYTES {
+            return trimmed.to_string();
+        }
+        let mut end = SUGGEST_MAX_PREFIX_BYTES;
+        while !trimmed.is_char_boundary(end) {
+            end -= 1;
+        }
+        trimmed[..end].to_string()
+    }
+
+    /// Why the response may carry a `meta.notice`, per the scope contract.
+    #[must_use]
+    pub fn scope_notice(&self) -> Option<&'static str> {
+        match self.scope.as_str() {
+            "all" | "titles" | "terms" => None,
+            "related" => Some("related suggestions are a page-level feature in v0.1 and are not served by this endpoint"),
+            _ => Some("unknown scope; treated as all"),
+        }
+    }
+
+    /// Whether the scope admits term candidates. Unknown scopes are treated as `all`
+    /// per the contract; `related` never reaches filtering (it short-circuits to empty).
+    #[must_use]
+    pub fn wants_terms(&self) -> bool {
+        self.scope.as_str() != "titles"
+    }
+
+    /// Whether the scope admits title candidates.
+    #[must_use]
+    pub fn wants_titles(&self) -> bool {
+        self.scope.as_str() != "terms"
+    }
+}
+
+/// The first language tag of an `Accept-Language` header, lowercased; `None` when the
+/// header is absent or the first entry is not a plain language tag.
+fn first_accept_language(value: Option<&str>) -> Option<String> {
+    let tag = value?
+        .split(',')
+        .next()?
+        .split(';')
+        .next()?
+        .trim()
+        .to_ascii_lowercase();
+    (tag.chars().all(|c| c.is_ascii_graphic()) && tag.len() <= 32).then_some(tag)
+}
+
+/// Query echo block of the suggestions response.
+#[derive(Debug, Serialize)]
+pub struct SuggestQueryInfo {
+    pub prefix: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+}
+
+/// One ranked completion.
+#[derive(Debug, Serialize)]
+pub struct SuggestionItem {
+    pub text: String,
+    /// `terms` or `titles`, matching `docs/api/suggestions.md`.
+    pub kind: String,
+    /// Corpus frequency prior, 0…1. **Not** query frequency, which does not exist.
+    pub prior: f64,
+    /// Corpus support: how many documents back this string.
+    pub doc_count: u32,
+}
+
+/// A related-search entry. The list is always empty in v0.1 (related is page-level),
+/// but the field exists so clients do not need a schema change to adopt it.
+#[derive(Debug, Serialize)]
+pub struct RelatedItem {
+    pub text: String,
+    pub doc_count: u32,
+}
+
+/// Response envelope for `GET /api/v1/suggestions`.
+#[derive(Debug, Serialize)]
+pub struct SuggestResponse {
+    pub query: SuggestQueryInfo,
+    pub suggestions: Vec<SuggestionItem>,
+    pub related: Vec<RelatedItem>,
+    pub meta: SuggestMeta,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SuggestMeta {
+    pub took_ms: u64,
+    pub index_generation: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notice: Option<&'static str>,
+}
+
+impl SuggestResponse {
+    /// Build the response. Completions have already been ranked by `lynx-suggestions`.
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)] // priors are 0…1 floats by construction
+    pub fn from_completions(
+        prefix: &str,
+        language: Option<String>,
+        completions: Vec<lynx_suggestions::Completion>,
+        generation: &IndexGeneration,
+        took_ms: u64,
+        notice: Option<&'static str>,
+    ) -> Self {
+        let suggestions = completions
+            .into_iter()
+            .map(|c| SuggestionItem {
+                text: c.text,
+                kind: c.kind.as_str().to_string(),
+                // Three decimals are ample for a 0…1 prior and keep JSON deterministic.
+                prior: ((f64::from(c.prior) * 1_000.0).round() / 1_000.0),
+                doc_count: c.doc_count,
+            })
+            .collect();
+        Self {
+            query: SuggestQueryInfo {
+                prefix: prefix.to_string(),
+                language,
+            },
+            suggestions,
+            related: Vec::new(),
+            meta: SuggestMeta {
+                took_ms,
+                index_generation: format!("gen-{}", generation.id),
+                notice,
+            },
+        }
+    }
+
+    /// The empty-but-successful response for short prefixes: a normal answer, not an
+    /// error (`docs/api/suggestions.md` "Empty and short prefixes").
+    #[must_use]
+    pub fn empty(
+        prefix: &str,
+        language: Option<String>,
+        generation: &IndexGeneration,
+        took_ms: u64,
+    ) -> Self {
+        Self {
+            query: SuggestQueryInfo {
+                prefix: prefix.to_string(),
+                language,
+            },
+            suggestions: Vec::new(),
+            related: Vec::new(),
+            meta: SuggestMeta {
+                took_ms,
+                index_generation: format!("gen-{}", generation.id),
+                notice: None,
+            },
+        }
+    }
+}

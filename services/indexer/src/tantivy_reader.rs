@@ -19,14 +19,66 @@ use tantivy::schema::{
 use tantivy::tokenizer::{
     Token as TvToken, TokenStream as TvTokenStream, Tokenizer as TvTokenizer,
 };
-use tantivy::{Index, IndexReader, Searcher};
+use tantivy::{DocAddress, Index, IndexReader, Searcher};
+use tantivy_fst::Automaton;
+
+/// A byte automaton that matches any string that *starts with* the suggestion prefix
+/// (tantivy 0.22 has no public prefix automaton, and the `starts_with` wrapper state is
+/// not `Clone` as the term streamer requires, so prefix behaviour lives here).
+///
+/// The state is the number of prefix bytes matched: `0…len` means "running",
+/// `len` itself is the absorbing match state, and [`usize::MAX`] is dead.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StartsPrefixAutomaton {
+    prefix: Vec<u8>,
+}
+
+impl StartsPrefixAutomaton {
+    fn new(prefix: &str) -> Self {
+        Self {
+            prefix: prefix.as_bytes().to_vec(),
+        }
+    }
+}
+
+impl Automaton for StartsPrefixAutomaton {
+    type State = usize;
+
+    fn start(&self) -> Self::State {
+        0
+    }
+
+    fn is_match(&self, state: &Self::State) -> bool {
+        *state == self.prefix.len() // dead is usize::MAX
+    }
+
+    fn can_match(&self, state: &Self::State) -> bool {
+        *state != usize::MAX
+    }
+
+    fn will_always_match(&self, state: &Self::State) -> bool {
+        *state == self.prefix.len()
+    }
+
+    fn accept(&self, state: &Self::State, byte: u8) -> Self::State {
+        if *state != usize::MAX && *state < self.prefix.len() && byte == self.prefix[*state] {
+            *state + 1
+        } else if *state == self.prefix.len() {
+            // Past the prefix everything still matches: the state is absorbing.
+            *state
+        } else {
+            usize::MAX // dead
+        }
+    }
+}
 use time::OffsetDateTime;
 
 use crate::memory::IndexedDocument;
 use crate::reader::{
-    passes_filters, Candidate, CollectionStats, DocId, DocumentMetadata, Explanation, FieldHits,
-    FieldLengths, FieldWeights, IndexError, IndexGeneration, Result, SearchIndexReader,
-    SearchOptions, TermExplanation, TermFrequency,
+    passes_filters, title_prefix_phrase, Candidate, CollectionStats, DocId, DocumentMetadata,
+    Explanation, FieldHits, FieldLengths, FieldWeights, IndexError, IndexGeneration, Result,
+    SearchIndexReader, SearchOptions, SuggestionCandidate, SuggestionKind, TermExplanation,
+    TermFrequency, MIN_SUGGESTION_PREFIX_LEN,
 };
 use crate::tokenizer::{tokenize, tokenize_with_spans};
 
@@ -105,6 +157,10 @@ pub struct TantivyIndexReader {
     /// the lifetime of this reader ([`TantivyIndexReader`] is read-only: a new generation
     /// means a new instance, so the cache cannot go stale).
     stats: std::sync::OnceLock<CollectionStats>,
+    /// Title-opening phrases → the number of documents whose title begins with each,
+    /// built once on first suggestion lookup (the reader is immutable for its lifetime,
+    /// so this cache cannot go stale).
+    titles: std::sync::OnceLock<BTreeMap<String, u32>>,
 }
 
 impl std::fmt::Debug for TantivyIndexReader {
@@ -259,6 +315,14 @@ fn register_lynx_tokenizer(index: &Index) {
 }
 
 impl TantivyIndexReader {
+    /// The title-phrase → document-count table, built once on first use from the
+    /// stored titles; the reader is immutable for its lifetime, so the cache cannot go
+    /// stale.
+    fn title_counts(&self) -> &BTreeMap<String, u32> {
+        self.titles
+            .get_or_init(|| build_title_counts(&self.reader.searcher(), self.fields.title))
+    }
+
     /// Build an in-RAM index from `docs` and expose it as a reader.
     ///
     /// # Errors
@@ -293,6 +357,7 @@ impl TantivyIndexReader {
             fields,
             generation,
             stats: std::sync::OnceLock::new(),
+            titles: std::sync::OnceLock::new(),
         })
     }
 
@@ -360,6 +425,7 @@ impl TantivyIndexReader {
             fields,
             generation,
             stats: std::sync::OnceLock::new(),
+            titles: std::sync::OnceLock::new(),
         })
     }
 
@@ -1023,6 +1089,80 @@ impl SearchIndexReader for TantivyIndexReader {
         }))
     }
 
+    fn suggest_candidates(&self, prefix: &str, limit: usize) -> Result<Vec<SuggestionCandidate>> {
+        let prefix = prefix.trim().to_ascii_lowercase();
+        if limit == 0 || prefix.len() < MIN_SUGGESTION_PREFIX_LEN {
+            return Ok(Vec::new());
+        }
+
+        let searcher = self.reader.searcher();
+        let automaton = StartsPrefixAutomaton::new(&prefix);
+
+        // Terms: every text field's dictionary, automaton-scanned to the prefix.
+        // Document frequency per field is summed across segments; a term's support is
+        // the max across fields, the same definition the in-memory reader uses.
+        let mut merged_term_dfs: BTreeMap<String, u32> = BTreeMap::new();
+        for field in self.fields.text() {
+            let mut per_field_dfs: BTreeMap<String, u32> = BTreeMap::new();
+            for segment in searcher.segment_readers() {
+                let index = segment
+                    .inverted_index(field)
+                    .map_err(|e| IndexError::Corrupt(e.to_string()))?;
+                let mut stream = index
+                    .terms()
+                    .search(automaton.clone())
+                    .into_stream()
+                    .map_err(|e| IndexError::Corrupt(e.to_string()))?;
+                while let Some((key, _)) = stream.next() {
+                    let text = String::from_utf8_lossy(key).into_owned();
+                    let df = index
+                        .read_postings(
+                            &Term::from_field_bytes(field, key),
+                            IndexRecordOption::Basic,
+                        )
+                        .map_err(|e| IndexError::Corrupt(e.to_string()))?
+                        .map_or(0, |postings| postings.doc_freq());
+                    *per_field_dfs.entry(text).or_insert(0) = per_field_dfs
+                        .get(&text)
+                        .copied()
+                        .unwrap_or(0)
+                        .saturating_add(df);
+                }
+            }
+            for (text, df) in per_field_dfs {
+                merged_term_dfs
+                    .entry(text)
+                    .and_modify(|current| *current = (*current).max(df))
+                    .or_insert(df);
+            }
+        }
+
+        // Titles: the documents whose title *begins* with the prefix, one candidate per
+        // distinct opening phrase.
+        let title_counts = self.title_counts();
+        let mut out: Vec<SuggestionCandidate> = merged_term_dfs
+            .into_iter()
+            .take(limit)
+            .map(|(text, doc_count)| SuggestionCandidate {
+                text,
+                kind: SuggestionKind::Term,
+                doc_count,
+            })
+            .collect();
+        out.extend(
+            title_counts
+                .iter()
+                .filter(|(phrase, _)| phrase.starts_with(prefix.as_str()))
+                .take(limit)
+                .map(|(text, &doc_count)| SuggestionCandidate {
+                    text: text.clone(),
+                    kind: SuggestionKind::Title,
+                    doc_count,
+                }),
+        );
+        Ok(out)
+    }
+
     fn explain(&self, plan: &QueryPlan, doc_id: DocId) -> Result<Explanation> {
         let searcher = self.reader.searcher();
         let term = Term::from_field_text(self.fields.doc_id, &doc_id.to_string());
@@ -1050,4 +1190,26 @@ impl SearchIndexReader for TantivyIndexReader {
             terms,
         })
     }
+}
+
+/// Build the title-phrase → document-count dictionary used by suggestion lookups.
+///
+/// Stored titles are read in full once per reader instance.
+fn build_title_counts(searcher: &Searcher, title_field: Field) -> BTreeMap<String, u32> {
+    let mut counts = BTreeMap::new();
+    for (ordinal, segment) in searcher.segment_readers().iter().enumerate() {
+        for ord in 0..segment.max_doc() {
+            let Ok(doc) = searcher.doc(DocAddress::new(
+                u32::try_from(ordinal).unwrap_or(u32::MAX),
+                ord,
+            )) else {
+                continue;
+            };
+            let doc: TantivyDocument = doc;
+            if let Some(phrase) = title_prefix_phrase(&text_of(&doc, title_field)) {
+                *counts.entry(phrase).or_insert(0) += 1;
+            }
+        }
+    }
+    counts
 }

@@ -12,7 +12,10 @@
 )]
 
 use lynx_common::ids::DocumentId;
-use lynx_indexer::{InMemoryIndex, IndexedDocument, SearchIndexReader, SearchOptions};
+use lynx_indexer::{
+    InMemoryIndex, IndexedDocument, SearchIndexReader, SearchOptions, SuggestionCandidate,
+    SuggestionKind,
+};
 use lynx_query::{parse, QueryPlan};
 use time::macros::datetime;
 
@@ -279,6 +282,73 @@ fn collection_stats_report_corpus_size_and_field_lengths() {
     assert_eq!(stats.doc_count, 4);
     assert!(stats.avg.body > 0.0);
     assert!(stats.avg.title > 0.0);
+}
+
+#[test]
+fn suggestions_reach_terms_and_title_openings() {
+    let index = sample();
+    let cands = index.suggest_candidates("tok", 8).unwrap();
+    // The term `tokio` (corpus support) and the document that opens with it.
+    assert!(cands.contains(&SuggestionCandidate {
+        text: "tokio".to_string(),
+        kind: SuggestionKind::Term,
+        doc_count: 1,
+    }));
+    assert!(cands.contains(&SuggestionCandidate {
+        text: "tokio async runtime".to_string(),
+        kind: SuggestionKind::Title,
+        doc_count: 1,
+    }));
+}
+
+#[test]
+fn suggestions_rank_corpus_support_and_fold_case() {
+    let index = sample();
+    // Uppercase input folds; `rust` lives in 3 bodies, `runtime` in 1 doc.
+    let cands = index.suggest_candidates("RU", 8).unwrap();
+    assert!(cands.contains(&SuggestionCandidate {
+        text: "rust".to_string(),
+        kind: SuggestionKind::Term,
+        doc_count: 3,
+    }));
+    assert!(cands.contains(&SuggestionCandidate {
+        text: "runtime".to_string(),
+        kind: SuggestionKind::Term,
+        doc_count: 1,
+    }));
+}
+
+#[test]
+fn suggestions_honour_the_limit_and_skip_short_prefixes() {
+    let index = sample();
+    assert!(index.suggest_candidates("r", 8).unwrap().is_empty());
+    assert!(index.suggest_candidates("", 8).unwrap().is_empty());
+    assert!(index.suggest_candidates("tokio", 0).unwrap().is_empty());
+    // `limit` is a hard cap on the working set.
+    assert_eq!(index.suggest_candidates("ru", 1).unwrap().len(), 1);
+}
+
+#[test]
+fn suggestions_never_surface_a_title_above_four_words() {
+    let mut index = InMemoryIndex::new();
+    let mut long = doc(
+        5,
+        "https://example.com/long",
+        "The Titles That Refuse To Stop Growing",
+        "ordinary body words.",
+    );
+    long.published_at = Some(datetime!(2025-01-01 00:00 UTC));
+    index.add(long);
+    let cands = index.suggest_candidates("the titles", 8).unwrap();
+    // The title *opens* with the prefix, so a candidate exists — but it is the
+    // 4-word truncation, not the full title.
+    assert!(
+        cands
+            .iter()
+            .any(|c| c.kind == SuggestionKind::Title
+                && c.text == "the titles that refuse".to_string())
+    );
+    assert!(!cands.iter().any(|c| c.text.contains("stop")));
 }
 
 #[test]

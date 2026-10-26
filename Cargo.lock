@@ -1279,6 +1279,7 @@ dependencies = [
  "lynx-query",
  "lynx-ranker",
  "lynx-security",
+ "lynx-suggestions",
  "rand 0.8.8",
  "serde",
  "serde_json",
@@ -1386,6 +1387,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tantivy",
+ "tantivy-fst",
  "tempfile",
  "thiserror 1.0.69",
  "time",
@@ -1496,6 +1498,7 @@ name = "lynx-suggestions"
 version = "0.1.0"
 dependencies = [
  "lynx-common",
+ "lynx-indexer",
  "pretty_assertions",
 ]
 

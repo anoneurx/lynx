@@ -38,7 +38,8 @@ pub use pipeline::{
 pub use reader::{
     passes_filters, AvgFieldLengths, Candidate, CollectionStats, DocId, DocumentMetadata,
     Explanation, FieldHits, FieldLengths, FieldWeights, IndexError, IndexGeneration,
-    SearchIndexReader, SearchOptions, TermExplanation, TermFrequency,
+    SearchIndexReader, SearchOptions, SuggestionCandidate, SuggestionKind, TermExplanation,
+    TermFrequency,
 };
 
 /// The service name, used in logs and metrics.
