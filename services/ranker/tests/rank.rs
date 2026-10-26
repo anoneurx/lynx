@@ -242,3 +242,68 @@ fn ranking_is_deterministic() {
         assert!((a.score - b.score).abs() < 1e-12);
     }
 }
+
+#[test]
+fn negated_mixed_case_terms_are_penalised() {
+    // `-GitHub` must penalise a candidate whose text carries `GitHub`: the ranker
+    // tokenises the negation the same way the index does (`GitHub` → `github`).
+    let mut index = InMemoryIndex::new();
+    index.add(doc(1, "Rust programming", "A systems language."));
+    index.add(doc(
+        2,
+        "Rust programming",
+        "A systems language. It is famous on GitHub.",
+    ));
+
+    let ranked = rank_all(&index, "rust -GitHub", datetime!(2026-01-01 00:00 UTC));
+    assert_eq!(ranked.len(), 2);
+    let clean = ranked
+        .iter()
+        .find(|r| url_of(r) == "https://e.com/1")
+        .unwrap();
+    let negated = ranked
+        .iter()
+        .find(|r| url_of(r) == "https://e.com/2")
+        .unwrap();
+    assert_eq!(clean.signals.negation, 0.0);
+    assert!(negated.signals.negation > 0.0);
+    assert!(negated.score < clean.score);
+    assert_eq!(url_of(&ranked[0]), "https://e.com/1");
+}
+
+#[test]
+fn negated_symbolic_terms_are_penalised() {
+    // `-c++` splits to the tokens `c` (+ nothing else); a candidate containing the
+    // bare token `c` must be penalised even though the raw term `c++` never appears.
+    let mut index = InMemoryIndex::new();
+    index.add(doc(1, "Rust programming", "A systems language."));
+    index.add(doc(
+        2,
+        "Rust programming",
+        "A systems language. It is written in c++.",
+    ));
+
+    let ranked = rank_all(&index, "rust -c++", datetime!(2026-01-01 00:00 UTC));
+    assert_eq!(ranked.len(), 2);
+    let negated = ranked
+        .iter()
+        .find(|r| url_of(r) == "https://e.com/2")
+        .unwrap();
+    let clean = ranked
+        .iter()
+        .find(|r| url_of(r) == "https://e.com/1")
+        .unwrap();
+    assert!(negated.signals.negation > 0.0);
+    assert!(negated.score < clean.score);
+}
+
+#[test]
+fn negation_tokens_enter_coverage_and_negation_sets() {
+    let plan = parse("rust systems -GitHub -c++");
+    let coverage = lynx_ranker::unique_query_terms(&plan);
+    assert!(coverage.contains("rust"));
+    assert!(coverage.contains("systems"));
+    let negated = lynx_ranker::negation_terms(&plan);
+    assert!(negated.contains("github"));
+    assert!(negated.contains("c"));
+}

@@ -116,6 +116,10 @@ pub struct Filters {
     /// here for the title-boost stage).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub intitle: Vec<String>,
+    /// Anchor-text tokens that must appear in the anchors pointing at the document
+    /// (a scored text clause over the anchors field, like [`Filters::intitle`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub inanchor: Vec<String>,
     /// Allowed file extensions.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ext: Vec<String>,
@@ -144,6 +148,7 @@ impl Filters {
         self.site.is_some()
             || self.inurl.is_some()
             || !self.intitle.is_empty()
+            || !self.inanchor.is_empty()
             || !self.ext.is_empty()
             || !self.filetype.is_empty()
             || self.lang.is_some()
@@ -168,6 +173,8 @@ pub enum Operator {
     Inurl,
     /// `intitle:`
     Intitle,
+    /// `inanchor:`
+    Inanchor,
     /// `ext:`
     Ext,
     /// `before:`

@@ -178,7 +178,12 @@ fn normalise(plan: &mut QueryPlan) {
     for phrase in &mut plan.phrases {
         phrase.text = fold(&phrase.text);
     }
-    for t in &mut plan.filters.intitle {
+    for t in plan
+        .filters
+        .intitle
+        .iter_mut()
+        .chain(plan.filters.inanchor.iter_mut())
+    {
         *t = fold(t);
     }
     for e in &mut plan.filters.ext {

@@ -30,6 +30,7 @@ pub mod signals;
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use lynx_indexer::tokenizer::tokenize;
 use lynx_indexer::{Candidate, CollectionStats, DocId, TermFrequency};
 use lynx_query::QueryPlan;
 use time::OffsetDateTime;
@@ -244,19 +245,32 @@ impl Default for Ranker {
 }
 
 /// The set of unique query terms a retrieval would have matched on.
+///
+/// Terms are keyed at token level, the same keys the index readers put on
+/// `Candidate::terms`: a raw term like `c++` never matches a candidate's token map, so
+/// each term (and each `intitle:`/`inanchor:` value) is split into its tokens before the
+/// unique set is built.
 #[must_use]
 pub fn unique_query_terms(plan: &QueryPlan) -> BTreeSet<String> {
     plan.must
         .iter()
         .chain(&plan.should)
-        .map(|t| t.text().to_string())
+        .flat_map(|t| tokenize(t.text()))
+        .chain(plan.filters.intitle.iter().flat_map(|v| tokenize(v)))
+        .chain(plan.filters.inanchor.iter().flat_map(|v| tokenize(v)))
         .collect()
 }
 
 /// The set of negated terms (`-term`), whose presence downranks a document.
+///
+/// Like [`unique_query_terms`], this is token-level so `-c++` matches a candidate that
+/// carries the token `c`.
 #[must_use]
 pub fn negation_terms(plan: &QueryPlan) -> BTreeSet<String> {
-    plan.must_not.iter().map(|t| t.text().to_string()).collect()
+    plan.must_not
+        .iter()
+        .flat_map(|t| tokenize(t.text()))
+        .collect()
 }
 
 #[cfg(test)]

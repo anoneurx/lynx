@@ -301,6 +301,7 @@ fn operator_name(op: Operator) -> &'static str {
         Operator::Site => "site",
         Operator::Inurl => "inurl",
         Operator::Intitle => "intitle",
+        Operator::Inanchor => "inanchor",
         Operator::Ext => "ext",
         Operator::Before => "before",
         Operator::After => "after",

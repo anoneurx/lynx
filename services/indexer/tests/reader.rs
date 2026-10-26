@@ -190,14 +190,14 @@ fn intitle_requires_the_term_in_the_title() {
 fn count_matches_search() {
     let index = sample();
     let plan = parse("rust");
-    assert_eq!(index.count(&plan).unwrap(), 3);
+    assert_eq!(index.count(&plan, opts().now).unwrap(), 3);
 }
 
 #[test]
 fn filter_only_query_matches_all_passing() {
     let index = sample();
     let plan = parse("site:example.com");
-    assert_eq!(index.count(&plan).unwrap(), 2);
+    assert_eq!(index.count(&plan, opts().now).unwrap(), 2);
 }
 
 #[test]
@@ -258,7 +258,7 @@ fn pagination_is_deterministic() {
 fn empty_query_matches_everything() {
     let index = sample();
     let plan: QueryPlan = parse("");
-    assert_eq!(index.count(&plan).unwrap(), 4);
+    assert_eq!(index.count(&plan, opts().now).unwrap(), 4);
 }
 
 #[test]

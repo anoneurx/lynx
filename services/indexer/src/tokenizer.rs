@@ -9,23 +9,58 @@ use std::collections::BTreeMap;
 
 use lynx_common::text;
 
+/// A token and its byte span within the folded text.
+///
+/// The span is relative to the `NFKC`-folded form of the input, not the original
+/// string; consumers that need original-text offsets treat it as best effort.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TokenSpan {
+    /// The token text.
+    pub text: String,
+    /// Byte offset of the token's first character in the folded text.
+    pub start: usize,
+    /// Byte offset one past the token's last character in the folded text.
+    pub end: usize,
+}
+
+/// Tokenise `text`, also reporting each token's byte span within the folded text.
+#[must_use]
+pub fn tokenize_with_spans(text: &str) -> Vec<TokenSpan> {
+    let folded = text::fold_for_compare(text);
+    let mut spans = Vec::new();
+    let mut start: Option<usize> = None;
+    let mut current = String::new();
+    for (i, c) in folded.char_indices() {
+        if c.is_alphanumeric() {
+            if start.is_none() {
+                start = Some(i);
+            }
+            current.push(c);
+        } else if let Some(s) = start.take() {
+            spans.push(TokenSpan {
+                text: std::mem::take(&mut current),
+                start: s,
+                end: i,
+            });
+        }
+    }
+    if let Some(s) = start {
+        spans.push(TokenSpan {
+            text: current,
+            start: s,
+            end: folded.len(),
+        });
+    }
+    spans
+}
+
 /// Tokenise `text`: NFKC-normalise, fold case, and split on non-alphanumeric characters.
 #[must_use]
 pub fn tokenize(text: &str) -> Vec<String> {
-    let folded = text::fold_for_compare(text);
-    let mut tokens = Vec::new();
-    let mut current = String::new();
-    for c in folded.chars() {
-        if c.is_alphanumeric() {
-            current.push(c);
-        } else if !current.is_empty() {
-            tokens.push(std::mem::take(&mut current));
-        }
-    }
-    if !current.is_empty() {
-        tokens.push(current);
-    }
-    tokens
+    tokenize_with_spans(text)
+        .into_iter()
+        .map(|t| t.text)
+        .collect()
 }
 
 /// Term frequencies for a field.
@@ -62,5 +97,25 @@ mod tests {
     #[test]
     fn empty_is_empty() {
         assert!(tokenize("   ").is_empty());
+    }
+
+    #[test]
+    fn spans_cover_the_folded_text() {
+        let spans = tokenize_with_spans("Hello, WORLD!");
+        assert_eq!(
+            spans,
+            vec![
+                TokenSpan {
+                    text: "hello".into(),
+                    start: 0,
+                    end: 5
+                },
+                TokenSpan {
+                    text: "world".into(),
+                    start: 7,
+                    end: 12
+                },
+            ]
+        );
     }
 }

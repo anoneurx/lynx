@@ -225,6 +225,14 @@ fn apply_operator(name: &str, value: &str, filters: &mut Filters) -> Option<Oper
                 Some(Operator::Intitle)
             }
         }
+        "inanchor" => {
+            if value.is_empty() {
+                None
+            } else {
+                filters.inanchor.push(value.to_string());
+                Some(Operator::Inanchor)
+            }
+        }
         "ext" => {
             let ext = value.trim_start_matches('.').to_ascii_lowercase();
             if ext.is_empty() {
@@ -271,13 +279,18 @@ fn apply_operator(name: &str, value: &str, filters: &mut Filters) -> Option<Oper
 }
 
 /// A permissive host/domain check: enough to reject obvious typos and URL fragments.
+///
+/// A domain never carries a port (a `:` means the user pasted a URL, not a domain), and
+/// a label never starts or ends with a hyphen.
 fn valid_domain(s: &str) -> bool {
     let s = s.trim_start_matches('.');
     !s.is_empty()
         && s.chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | ':'))
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-'))
         && s.chars().any(|c| c.is_ascii_alphanumeric())
         && !s.contains("..")
+        && !s.starts_with('-')
+        && !s.ends_with('-')
 }
 
 /// A language tag like `de`, `en-US`, `zh-Hans`.
@@ -396,6 +409,45 @@ mod tests {
         let p = plan("rust site:docs.rs");
         assert_eq!(p.filters.site.as_deref(), Some("docs.rs"));
         assert_eq!(p.must, vec![exact("rust")]);
+    }
+
+    #[test]
+    fn domain_with_interior_hyphen_is_valid() {
+        let p = plan("site:my-docs.rs");
+        assert_eq!(p.filters.site.as_deref(), Some("my-docs.rs"));
+    }
+
+    #[test]
+    fn domain_with_port_is_literal() {
+        // A host never carries a port; `site:host:8080` means a URL was pasted.
+        let p = plan("rust site:docs.rs:8080");
+        assert!(p.filters.site.is_none());
+        assert_eq!(p.must, vec![exact("rust"), exact("site:docs.rs:8080")]);
+    }
+
+    #[test]
+    fn domain_with_leading_or_trailing_hyphen_is_literal() {
+        let p = plan("site:-docs.rs");
+        assert!(p.filters.site.is_none());
+        assert_eq!(p.must, vec![exact("site:-docs.rs")]);
+        let p = plan("site:docs.rs-");
+        assert!(p.filters.site.is_none());
+        assert_eq!(p.must, vec![exact("site:docs.rs-")]);
+    }
+
+    #[test]
+    fn inanchor_requires_the_term_in_the_anchor_text() {
+        let p = plan("terms inanchor:rust");
+        assert_eq!(p.filters.inanchor, vec!["rust".to_string()]);
+        assert_eq!(p.must, vec![exact("terms")]);
+        assert!(p.operators_used.contains(&Operator::Inanchor));
+    }
+
+    #[test]
+    fn inanchor_empty_value_is_literal() {
+        let p = plan("terms inanchor:");
+        assert!(p.filters.inanchor.is_empty());
+        assert_eq!(p.must, vec![exact("terms"), exact("inanchor:")]);
     }
 
     #[test]

@@ -202,7 +202,7 @@ fn intitle_requires_the_term_in_the_title() {
 fn count_matches_search() {
     let index = sample();
     let plan: QueryPlan = parse("rust");
-    assert_eq!(index.count(&plan).unwrap(), 3);
+    assert_eq!(index.count(&plan, opts().now).unwrap(), 3);
 }
 
 #[test]
@@ -230,7 +230,7 @@ fn explain_reports_term_contributions() {
 fn empty_query_matches_everything() {
     let index = sample();
     let plan: QueryPlan = parse("");
-    assert_eq!(index.count(&plan).unwrap(), 4);
+    assert_eq!(index.count(&plan, opts().now).unwrap(), 4);
 }
 
 #[test]
@@ -303,7 +303,12 @@ fn generation_round_trips_through_disk() {
     assert_eq!(index.generation().id, 7);
     assert_eq!(index.generation().doc_count, 2);
     assert_eq!(search(&index, "rust async").len(), 1);
-    assert_eq!(index.count(&parse("zig")).unwrap(), 1);
+    assert_eq!(
+        index
+            .count(&parse("zig"), datetime!(2026-02-18 00:00 UTC))
+            .unwrap(),
+        1
+    );
 }
 
 #[test]

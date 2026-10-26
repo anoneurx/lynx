@@ -347,9 +347,12 @@ pub trait SearchIndexReader: Send + Sync {
 
     /// Count documents matching `plan`.
     ///
+    /// `now` is the instant used for freshness and date filters, so a count agrees with
+    /// a search run under the same clock.
+    ///
     /// # Errors
     /// Returns [`IndexError`] when the index cannot be read.
-    fn count(&self, plan: &QueryPlan) -> Result<u64>;
+    fn count(&self, plan: &QueryPlan, now: OffsetDateTime) -> Result<u64>;
 
     /// Fetch metadata for a document.
     ///

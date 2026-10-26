@@ -15,8 +15,7 @@ use crate::reader::{
     FieldLengths, FieldWeights, IndexGeneration, Result, SearchIndexReader, SearchOptions,
     TermExplanation, TermFrequency,
 };
-use crate::tokenizer::term_frequencies;
-
+use crate::tokenizer::{term_frequencies, tokenize};
 /// A document to be added to the in-memory index.
 #[derive(Debug, Clone)]
 pub struct IndexedDocument {
@@ -117,7 +116,14 @@ struct StoredDoc {
     url_tf: BTreeMap<String, u32>,
     alt_tf: BTreeMap<String, u32>,
     all_terms: BTreeSet<String>,
-    phrase_haystack: String,
+    /// Per-field token sequences, for phrase matching. Order is the field's own order;
+    /// a phrase matches only within one field, never across a field boundary.
+    title_tokens: Vec<String>,
+    headings_tokens: Vec<String>,
+    body_tokens: Vec<String>,
+    anchors_tokens: Vec<String>,
+    url_tokens: Vec<String>,
+    alt_tokens: Vec<String>,
     content_length: u32,
     field_lengths: FieldLengths,
 }
@@ -142,17 +148,16 @@ impl StoredDoc {
         ] {
             all_terms.extend(map.keys().cloned());
         }
-        // Phrase matching needs field order preserved, so build this from the tokens in
-        // sequence rather than from the sorted term set.
-        let phrase_haystack = [
-            crate::tokenizer::tokenize(&doc.title),
-            crate::tokenizer::tokenize(&doc.headings),
-            crate::tokenizer::tokenize(&doc.body),
-            crate::tokenizer::tokenize(&doc.anchors),
-            crate::tokenizer::tokenize(&doc.alt),
-        ]
-        .concat()
-        .join(" ");
+        // Phrase matching needs per-field token order preserved, so these are built
+        // from the tokens in sequence rather than from the sorted term set. The URL
+        // field is included so a phrase can match there, as it does in the Tantivy
+        // reader.
+        let title_tokens = crate::tokenizer::tokenize(&doc.title);
+        let headings_tokens = crate::tokenizer::tokenize(&doc.headings);
+        let body_tokens = crate::tokenizer::tokenize(&doc.body);
+        let anchors_tokens = crate::tokenizer::tokenize(&doc.anchors);
+        let url_tokens = crate::tokenizer::tokenize(&doc.url);
+        let alt_tokens = crate::tokenizer::tokenize(&doc.alt);
         let content_length = u32::try_from(doc.body.len()).unwrap_or(u32::MAX);
 
         // A field's token count is the sum of its term frequencies.
@@ -174,7 +179,12 @@ impl StoredDoc {
             url_tf,
             alt_tf,
             all_terms,
-            phrase_haystack,
+            title_tokens,
+            headings_tokens,
+            body_tokens,
+            anchors_tokens,
+            url_tokens,
+            alt_tokens,
             content_length,
             field_lengths,
         }
@@ -234,6 +244,10 @@ impl InMemoryIndex {
     }
 
     /// Score a stored document against a plan. `None` when it does not match.
+    ///
+    /// The clause order mirrors the tantivy reader's query construction, so the two
+    /// backends cannot drift; ~100 lines is the size of that mirroring.
+    #[allow(clippy::too_many_lines)]
     fn score_doc(
         stored: &StoredDoc,
         plan: &QueryPlan,
@@ -257,34 +271,87 @@ impl InMemoryIndex {
         let mut score = 0.0f32;
         let mut hits = FieldHits::default();
 
-        // must: every term present.
+        // must: every token of every term must be present in the document, in any
+        // field (tokens may land in different fields, matching the Tantivy reader's
+        // per-token `any_field` clause). A term whose text yields no tokens adds no
+        // requirement, exactly as the Tantivy query omits the clause.
+        let mut mandatory_clause = false;
         for term in &plan.must {
-            let t = term.text();
-            if !stored.all_terms.contains(t) {
+            let tokens = crate::tokenizer::tokenize(term.text());
+            if tokens.is_empty() {
+                continue;
+            }
+            if !tokens.iter().all(|t| stored.all_terms.contains(t)) {
                 return None;
             }
-            score += accumulate(t, stored, &w, &mut hits);
+            mandatory_clause = true;
+            for token in &tokens {
+                score += accumulate(token, stored, &w, &mut hits);
+            }
         }
 
-        // should: at least one present when this is a disjunction.
+        // should clauses: with a mandatory clause present they are purely additive
+        // scoring; without one, at least one should-term must match so a disjunction
+        // cannot widen into a match-all
+        // (`docs/search/retrieval.md` § Fused retrieval).
         if plan.disjunction {
             let mut matched_any = false;
             for term in &plan.should {
-                let t = term.text();
-                if stored.all_terms.contains(t) {
+                let tokens = crate::tokenizer::tokenize(term.text());
+                if tokens.is_empty() {
+                    continue;
+                }
+                if tokens.iter().all(|t| stored.all_terms.contains(t)) {
                     matched_any = true;
-                    score += accumulate(t, stored, &w, &mut hits);
+                    for token in &tokens {
+                        score += accumulate(token, stored, &w, &mut hits);
+                    }
                 }
             }
-            if !matched_any {
-                return None;
+            if !matched_any && plan.should.iter().any(|t| !tokenize(t.text()).is_empty()) {
+                let phrase_mandatory = plan.phrases.iter().any(|p| !tokenize(&p.text).is_empty());
+                let intitle_mandatory =
+                    plan.filters.intitle.iter().any(|v| !tokenize(v).is_empty());
+                let inanchor_mandatory = plan
+                    .filters
+                    .inanchor
+                    .iter()
+                    .any(|v| !tokenize(v).is_empty());
+                if !(mandatory_clause
+                    || phrase_mandatory
+                    || intitle_mandatory
+                    || inanchor_mandatory)
+                {
+                    return None;
+                }
             }
         }
 
-        // phrases: each must appear as adjacent terms.
+        // phrases: each must appear as a contiguous token run within ONE field,
+        // never across a field boundary. A single-token phrase behaves like a
+        // must-term; a token-less phrase adds no requirement.
         for phrase in &plan.phrases {
-            let needle = format!(" {} ", phrase.text);
-            if !format!(" {} ", stored.phrase_haystack).contains(&needle) {
+            let tokens = crate::tokenizer::tokenize(&phrase.text);
+            if tokens.is_empty() {
+                continue;
+            }
+            let fields: [&Vec<String>; 6] = [
+                &stored.title_tokens,
+                &stored.headings_tokens,
+                &stored.body_tokens,
+                &stored.anchors_tokens,
+                &stored.url_tokens,
+                &stored.alt_tokens,
+            ];
+            let found = if tokens.len() == 1 {
+                stored.all_terms.contains(&tokens[0])
+            } else {
+                fields.iter().any(|seq| {
+                    seq.windows(tokens.len())
+                        .any(|window| window.iter().eq(tokens.iter()))
+                })
+            };
+            if !found {
                 return None;
             }
             score += w.body;
@@ -298,6 +365,15 @@ impl InMemoryIndex {
                 continue;
             }
             score += intitle_contribution(&tokens, stored, w.title, &mut hits)?;
+        }
+
+        // inanchor: anchor-text-scoped, mirroring intitle over the anchors field.
+        for value in &plan.filters.inanchor {
+            let tokens = crate::tokenizer::tokenize(value);
+            if tokens.is_empty() {
+                continue;
+            }
+            score += inanchor_contribution(&tokens, stored, w.anchors, &mut hits)?;
         }
 
         // No positive clause and no filter is a match-all (used by counts).
@@ -321,11 +397,14 @@ impl InMemoryIndex {
     /// the ranker can detect a penalty without a second lookup, and the `intitle:` ones so
     /// their title hits reach BM25F.
     fn term_frequencies_for(&self, stored: &StoredDoc, plan: &QueryPlan) -> Vec<TermFrequency> {
+        // Terms are keyed at token level: a term like `c++` never matches a token map,
+        // so each term is split into its tokens and candidates carry the same keys the
+        // Tantivy reader's query tokens produce.
         let mut wanted: Vec<String> = Vec::new();
         for term in plan.must.iter().chain(&plan.should).chain(&plan.must_not) {
-            wanted.push(term.text().to_string());
+            wanted.extend(crate::tokenizer::tokenize(term.text()));
         }
-        for value in &plan.filters.intitle {
+        for value in plan.filters.intitle.iter().chain(&plan.filters.inanchor) {
             wanted.extend(crate::tokenizer::tokenize(value));
         }
 
@@ -425,22 +504,44 @@ fn accumulate(term: &str, stored: &StoredDoc, w: &FieldWeights, hits: &mut Field
     score
 }
 
-/// Title-scoped contribution for an `intitle:` value: `Some` total when every token is
-/// present in the title, `None` otherwise.
+/// Field-scoped requirement contribution: `Some` total when every token is present in
+/// the field's term-frequency map, `None` otherwise. `record_hit` receives each token's
+/// observed frequency.
 #[allow(clippy::cast_precision_loss)] // term frequencies are tiny; f32 precision is ample
+fn required_contribution(
+    tokens: &[String],
+    tf: &BTreeMap<String, u32>,
+    weight: f32,
+    mut record_hit: impl FnMut(u32),
+) -> Option<f32> {
+    let mut contribution = 0.0;
+    for token in tokens {
+        let n = tf.get(token.as_str())?;
+        contribution += weight * (*n as f32).min(3.0);
+        record_hit(*n);
+    }
+    Some(contribution)
+}
+
+/// Title-scoped contribution for an `intitle:` value.
 fn intitle_contribution(
     tokens: &[String],
     stored: &StoredDoc,
     weight: f32,
     hits: &mut FieldHits,
 ) -> Option<f32> {
-    let mut contribution = 0.0;
-    for token in tokens {
-        let tf = stored.title_tf.get(token.as_str())?;
-        contribution += weight * (*tf as f32).min(3.0);
-        hits.title += *tf;
-    }
-    Some(contribution)
+    required_contribution(tokens, &stored.title_tf, weight, |n| hits.title += n)
+}
+
+/// Anchor-text-scoped contribution for an `inanchor:` value, mirroring `intitle` over
+/// the anchors field.
+fn inanchor_contribution(
+    tokens: &[String],
+    stored: &StoredDoc,
+    weight: f32,
+    hits: &mut FieldHits,
+) -> Option<f32> {
+    required_contribution(tokens, &stored.anchors_tf, weight, |n| hits.anchors += n)
 }
 
 impl SearchIndexReader for InMemoryIndex {
@@ -477,11 +578,17 @@ impl SearchIndexReader for InMemoryIndex {
             .collect())
     }
 
-    fn count(&self, plan: &QueryPlan) -> Result<u64> {
+    fn count(&self, plan: &QueryPlan, now: OffsetDateTime) -> Result<u64> {
+        // The count honours the caller's clock so freshness and date windows behave
+        // exactly as they do in `search`.
+        let opts = SearchOptions {
+            now,
+            ..SearchOptions::default()
+        };
         let n = self
             .docs
             .iter()
-            .filter(|stored| Self::score_doc(stored, plan, &SearchOptions::default()).is_some())
+            .filter(|stored| Self::score_doc(stored, plan, &opts).is_some())
             .count();
         Ok(u64::try_from(n).unwrap_or(u64::MAX))
     }
@@ -519,14 +626,15 @@ impl SearchIndexReader for InMemoryIndex {
         let mut total = 0.0;
 
         // Positive clauses only: a negated term contributes no lexical score, and the
-        // `intitle:` tokens do.
+        // `intitle:` / `inanchor:` tokens do. Like the Tantivy reader, terms are split
+        // into their tokens.
         let mut positive: Vec<String> = plan
             .must
             .iter()
             .chain(&plan.should)
-            .map(|t| t.text().to_string())
+            .flat_map(|t| crate::tokenizer::tokenize(t.text()))
             .collect();
-        for value in &plan.filters.intitle {
+        for value in plan.filters.intitle.iter().chain(&plan.filters.inanchor) {
             positive.extend(crate::tokenizer::tokenize(value));
         }
 

@@ -9,6 +9,41 @@ engine yet.
 
 ## [Unreleased]
 
+### Fixed (query/indexer correctness)
+
+- **Backend parity enforced.** A new `services/indexer/tests/parity.rs` loads the same
+  fixture corpus into the in-memory reference and the Tantivy reader and asserts the
+  same result sets and `count()` over a matrix covering AND/OR, phrases (contiguity
+  within one field only), punctuation/case folding, `intitle:`, `inanchor:`, `site:`
+  (including subdomains), `inurl:`, `filetype:`, `ext:`, `lang:`, dates, freshness,
+  negation, and empty queries. Any drift between the backends now fails tests, not
+  users.
+- **`must` + `OR` semantics aligned.** The in-memory reader required a should-term match
+  even when must-terms were present; Tantivy made should optional there. Both now make
+  should clauses additive when a mandatory clause exists, matching
+  `docs/search/retrieval.md`.
+- **Multi-token terms match in the in-memory reader.** A term like `c++` or
+  `async-runtime` never matched before; terms are now split to their tokens in both
+  backends, and candidates carry the same token-level term keys everywhere.
+- **Phrases matched per field.** The in-memory reader matched phrases across a
+  title/body boundary via a concatenated haystack; phrase matching is now a contiguous
+  token run within a single field, like the Tantivy `PhraseQuery`.
+- **Negation and coverage keys are token-level in the ranker.** `-GitHub` and `-c++`
+  now actually penalise documents carrying the folded tokens; query-term coverage
+  counts tokens, not raw terms.
+- **`inanchor:` wired end to end** (parse → validate → both readers → operator name),
+  anchor-text scored requirement mirroring `intitle:`.
+- **`count(plan)` takes `now`.** Freshness and date windows filter the count with the
+  same clock a search uses, so `meta.total` agrees with the returned page.
+- **Tantivy filter pushdown and deterministic ordering.** Language and date filters are
+  pushed into the Tantivy query (`TermQuery`/`RangeQuery` over a fast field), and the
+  tantivy reader now re-sorts ties by doc-id ascending like the reference reader.
+- **`site:` filter values tightened** (no ports, no leading/trailing hyphens); stray
+  pasted URLs become literal terms instead of broken filters.
+- **Index-time tokenisation equals query-time tokenisation.** The LYNX tokenizer is
+  registered with Tantivy in every construction path (positions stored for phrases);
+  full-width `Ｒｕｓｔ` now matches `rust` in the production reader too.
+
 ### Fixed (serving-plane hardening, serving audit 2026-10-26)
 
 - **Security headers are now applied to every response** through a router-level layer

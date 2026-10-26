@@ -4,14 +4,19 @@
 //! trait and its value types, so the engine stays replaceable (see ADR-0002). This is the
 //! production reader; the in-memory [`crate::memory::InMemoryIndex`] is the reference.
 
+use std::ops::Bound;
 use std::path::Path;
 
 use lynx_query::QueryPlan;
 use tantivy::collector::{Count, TopDocs};
-use tantivy::query::{AllQuery, BooleanQuery, Occur, PhraseQuery, Query, TermQuery};
+use tantivy::query::{AllQuery, BooleanQuery, Occur, PhraseQuery, Query, RangeQuery, TermQuery};
 use tantivy::schema::document::Value as _;
 use tantivy::schema::{
-    Field, IndexRecordOption, Schema, TantivyDocument, Term, STORED, STRING, TEXT,
+    Field, IndexRecordOption, NumericOptions, Schema, TantivyDocument, Term, TextFieldIndexing,
+    TextOptions, STORED, STRING,
+};
+use tantivy::tokenizer::{
+    Token as TvToken, TokenStream as TvTokenStream, Tokenizer as TvTokenizer,
 };
 use tantivy::{Index, IndexReader, Searcher};
 use time::OffsetDateTime;
@@ -22,10 +27,34 @@ use crate::reader::{
     FieldLengths, FieldWeights, IndexError, IndexGeneration, Result, SearchIndexReader,
     SearchOptions, TermExplanation, TermFrequency,
 };
-use crate::tokenizer::tokenize;
+use crate::tokenizer::{tokenize, tokenize_with_spans};
 
 /// The manifest file written alongside a generation's index segments.
 const GENERATION_FILE: &str = "generation.json";
+
+/// The name under which the LYNX tokenizer is registered, matching the schema's
+/// `TextFieldIndexing` tokenizers so index-time analysis equals query-time analysis
+/// (`docs/indexing/index-schema.md` § Analyzers).
+const LYNX_TOKENIZER: &str = "lynx";
+
+/// Text-field options that use the LYNX tokenizer and store positions (phrases need
+/// them), replacing tantivy's default `TEXT` options.
+fn text_field_options() -> TextOptions {
+    TextOptions::default().set_stored().set_indexing_options(
+        TextFieldIndexing::default()
+            .set_tokenizer(LYNX_TOKENIZER)
+            .set_index_option(IndexRecordOption::WithFreqsAndPositions),
+    )
+}
+
+/// The `published_at` field needs a fast field so date ranges can be pushed down as a
+/// `RangeQuery` instead of a full-document scan.
+fn timestamp_options() -> NumericOptions {
+    NumericOptions::default()
+        .set_stored()
+        .set_indexed()
+        .set_fast()
+}
 
 /// The concrete schema, resolved to field handles once.
 struct Fields {
@@ -135,16 +164,16 @@ fn build_fields(schema: &Schema) -> Fields {
 fn build_schema() -> (Schema, Fields) {
     let mut b = Schema::builder();
     b.add_text_field("doc_id", STRING | STORED);
-    b.add_text_field("url", TEXT | STORED);
-    b.add_text_field("title", TEXT | STORED);
-    b.add_text_field("headings", TEXT | STORED);
-    b.add_text_field("body", TEXT | STORED);
-    b.add_text_field("anchors", TEXT | STORED);
-    b.add_text_field("alt", TEXT | STORED);
+    b.add_text_field("url", text_field_options());
+    b.add_text_field("title", text_field_options());
+    b.add_text_field("headings", text_field_options());
+    b.add_text_field("body", text_field_options());
+    b.add_text_field("anchors", text_field_options());
+    b.add_text_field("alt", text_field_options());
     b.add_text_field("host", STRING | STORED);
     b.add_text_field("lang", STRING | STORED);
     b.add_text_field("content_type", STRING | STORED);
-    b.add_i64_field("published_at", STORED);
+    b.add_i64_field("published_at", timestamp_options());
     b.add_i64_field("modified_at", STORED);
     b.add_i64_field("crawled_at", STORED);
     b.add_f64_field("quality_score", STORED);
@@ -160,6 +189,70 @@ fn build_schema() -> (Schema, Fields) {
     (schema, fields)
 }
 
+/// Adapter exposing the LYNX tokenizer to Tantivy: index-time analysis is exactly
+/// `lynx_indexer::tokenizer::tokenize`, including its NFKC/case folding, so a query token
+/// matches the same surface form at index time (`docs/indexing/index-schema.md`).
+#[derive(Debug, Clone, Copy)]
+struct LynxTokenizer;
+
+impl TvTokenizer for LynxTokenizer {
+    type TokenStream<'a> = LynxTokenStream;
+
+    fn token_stream<'a>(&'a mut self, text: &'a str) -> Self::TokenStream<'a> {
+        // Spans are byte offsets within the folded text: best-effort offset info, as the
+        // fold itself changes lengths.
+        let tokens = tokenize_with_spans(text)
+            .into_iter()
+            .enumerate()
+            .map(|(position, span)| TvToken {
+                offset_from: span.start,
+                offset_to: span.end,
+                position,
+                text: span.text,
+                position_length: 1,
+            })
+            .collect();
+        LynxTokenStream {
+            tokens,
+            next: 0,
+            current: TvToken::default(),
+        }
+    }
+}
+
+/// A [`TvTokenStream`] over a pre-tokenised LYNX token list.
+#[derive(Debug)]
+struct LynxTokenStream {
+    tokens: Vec<TvToken>,
+    next: usize,
+    current: TvToken,
+}
+
+impl TvTokenStream for LynxTokenStream {
+    fn advance(&mut self) -> bool {
+        if self.next >= self.tokens.len() {
+            return false;
+        }
+        self.current = self.tokens[self.next].clone();
+        self.next += 1;
+        true
+    }
+
+    fn token(&self) -> &TvToken {
+        &self.current
+    }
+
+    fn token_mut(&mut self) -> &mut TvToken {
+        &mut self.current
+    }
+}
+
+/// Register the LYNX tokenizer on `index`. Must be called before documents are added or
+/// a reader is opened, whichever comes first.
+fn register_lynx_tokenizer(index: &Index) {
+    index.tokenizers().register(LYNX_TOKENIZER, LynxTokenizer);
+}
+
 impl TantivyIndexReader {
     /// Build an in-RAM index from `docs` and expose it as a reader.
     ///
@@ -171,6 +264,7 @@ impl TantivyIndexReader {
     ) -> Result<Self> {
         let (schema, fields) = build_schema();
         let index = Index::create_in_ram(schema);
+        register_lynx_tokenizer(&index);
         let mut writer = index
             .writer(50_000_000)
             .map_err(|e| IndexError::Unavailable(e.to_string()))?;
@@ -214,6 +308,7 @@ impl TantivyIndexReader {
         let (schema, fields) = build_schema();
         let index = Index::create_in_dir(dir, schema)
             .map_err(|e| IndexError::Unavailable(e.to_string()))?;
+        register_lynx_tokenizer(&index);
         let mut writer = index
             .writer(50_000_000)
             .map_err(|e| IndexError::Unavailable(e.to_string()))?;
@@ -248,6 +343,7 @@ impl TantivyIndexReader {
             .map_err(|e| IndexError::Corrupt(format!("generation manifest: {e}")))?;
 
         let index = Index::open_in_dir(dir).map_err(|e| IndexError::Unavailable(e.to_string()))?;
+        register_lynx_tokenizer(&index);
         let fields = build_fields(&index.schema());
         let reader = index
             .reader()
@@ -260,9 +356,24 @@ impl TantivyIndexReader {
         })
     }
 
-    fn build_query(&self, plan: &QueryPlan) -> Box<dyn Query> {
+    /// Build the Tantivy query for `plan`, pushing the hard filters that have an exact
+    /// tantivy equivalent into the query itself.
+    ///
+    /// Pushdown coverage:
+    ///
+    /// - `lang:` — `TermQuery` over the `lang` field, which is indexed lowercased.
+    /// - `before:` / `after:` / `freshness:` — `RangeQuery` over the `published_at`
+    ///   fast field, with the same day-midnight boundaries `passes_filters` uses. A
+    ///   document without a date has no term in the field, so it drops out of the range,
+    ///   matching the post-filter.
+    ///
+    /// `site:` has registrable-domain-suffix semantics in `passes_filters` (it matches
+    /// subdomains too) with no exact tantivy equivalent, so it — like `inurl:`, `ext:`
+    /// and `filetype:` — stays a post-filter.
+    fn build_query(&self, plan: &QueryPlan, now: OffsetDateTime) -> Box<dyn Query> {
         let text = self.fields.text();
         let title = self.fields.title;
+        let anchors = self.fields.anchors;
         let mut clauses: Vec<(Occur, Box<dyn Query>)> = Vec::new();
         let mut positive = false;
 
@@ -295,13 +406,74 @@ impl TantivyIndexReader {
                 positive = true;
             }
         }
+        // `inanchor:` mirrors `intitle:` over the anchors field.
+        for value in &plan.filters.inanchor {
+            if let Some(q) = any_field_query(&[anchors], &tokenize(value)) {
+                clauses.push((Occur::Must, q));
+                positive = true;
+            }
+        }
         // Negative terms add no clause: they are a scoring penalty, not an exclusion, and
         // the ranker downranks a document that contains one
         // (`docs/search/query-parsing.md` § Filters vs scoring).
+        clauses.extend(self.filter_pushdown(plan, now));
         if !positive {
             clauses.insert(0, (Occur::Must, Box::new(AllQuery)));
         }
         Box::new(BooleanQuery::new(clauses))
+    }
+
+    /// The pushed-down hard filters as mandatory clauses.
+    fn filter_pushdown(
+        &self,
+        plan: &QueryPlan,
+        now: OffsetDateTime,
+    ) -> Vec<(Occur, Box<dyn Query>)> {
+        let f = &plan.filters;
+        let mut pushdown: Vec<(Occur, Box<dyn Query>)> = Vec::new();
+
+        if let Some(lang) = &f.lang {
+            let term = Term::from_field_text(self.fields.lang, &lang.to_ascii_lowercase());
+            pushdown.push((
+                Occur::Must,
+                Box::new(TermQuery::new(term, IndexRecordOption::Basic)),
+            ));
+        }
+        // Date boundaries are compared as day boundaries at UTC midnight, the exact
+        // contrast `passes_filters` draws on `published_at.date()`.
+        let date_field = "published_at".to_string();
+        if let Some(before) = f.before {
+            pushdown.push((
+                Occur::Must,
+                Box::new(RangeQuery::new_i64_bounds(
+                    date_field.clone(),
+                    Bound::Unbounded,
+                    Bound::Excluded(before.midnight().assume_utc().unix_timestamp()),
+                )),
+            ));
+        }
+        if let Some(after) = f.after {
+            pushdown.push((
+                Occur::Must,
+                Box::new(RangeQuery::new_i64_bounds(
+                    date_field.clone(),
+                    Bound::Included(after.midnight().assume_utc().unix_timestamp()),
+                    Bound::Unbounded,
+                )),
+            ));
+        }
+        if let Some(window) = f.freshness {
+            let cutoff = now - time::Duration::seconds(window.approx_seconds());
+            pushdown.push((
+                Occur::Must,
+                Box::new(RangeQuery::new_i64_bounds(
+                    date_field,
+                    Bound::Included(cutoff.unix_timestamp()),
+                    Bound::Unbounded,
+                )),
+            ));
+        }
+        pushdown
     }
 }
 
@@ -314,8 +486,11 @@ fn to_tantivy_document(fields: &Fields, d: &IndexedDocument) -> TantivyDocument 
     doc.add_text(fields.body, &d.body);
     doc.add_text(fields.anchors, &d.anchors);
     doc.add_text(fields.alt, &d.alt);
-    doc.add_text(fields.host, &d.host);
-    doc.add_text(fields.lang, d.lang.clone().unwrap_or_default());
+    doc.add_text(fields.host, d.host.to_ascii_lowercase());
+    // `lang` is indexed lowercased so the `lang:` filter pushdown can use an exact term
+    // query, consistently with `passes_filters` case-insensitive comparison.
+    let lang = d.lang.clone().map(|l| l.to_ascii_lowercase());
+    doc.add_text(fields.lang, lang.as_deref().unwrap_or_default());
     doc.add_text(
         fields.content_type,
         d.content_type.clone().unwrap_or_default(),
@@ -352,7 +527,7 @@ fn positive_tokens(plan: &QueryPlan) -> Vec<String> {
         .chain(&plan.should)
         .flat_map(|t| tokenize(t.text()))
         .collect();
-    for value in &plan.filters.intitle {
+    for value in plan.filters.intitle.iter().chain(&plan.filters.inanchor) {
         tokens.extend(tokenize(value));
     }
     tokens
@@ -623,7 +798,7 @@ impl SearchIndexReader for TantivyIndexReader {
 
     fn search(&self, plan: &QueryPlan, opts: &SearchOptions) -> Result<Vec<Candidate>> {
         let searcher = self.reader.searcher();
-        let query = self.build_query(plan);
+        let query = self.build_query(plan, opts.now);
         let wanted = opts.limit.saturating_add(opts.offset).min(SCAN_LIMIT);
         let top = searcher
             .search(query.as_ref(), &TopDocs::with_limit(wanted.max(1)))
@@ -666,16 +841,52 @@ impl SearchIndexReader for TantivyIndexReader {
             )?);
         }
 
+        // Tantivy's `TopDocs` tie order is unspecified; the reference reader ties on
+        // doc-id ascending, so re-sort to the same order for deterministic pagination
+        // and backend parity.
+        out.sort_by(|a, b| {
+            b.bm25
+                .total_cmp(&a.bm25)
+                .then_with(|| a.doc_id.cmp(&b.doc_id))
+        });
         Ok(out.into_iter().skip(opts.offset).take(opts.limit).collect())
     }
 
-    fn count(&self, plan: &QueryPlan) -> Result<u64> {
-        let opts = SearchOptions {
-            limit: SCAN_LIMIT,
-            offset: 0,
-            ..SearchOptions::default()
-        };
-        Ok(u64::try_from(self.search(plan, &opts)?.len()).unwrap_or(u64::MAX))
+    fn count(&self, plan: &QueryPlan, now: OffsetDateTime) -> Result<u64> {
+        let searcher = self.reader.searcher();
+        let query = self.build_query(plan, now);
+        // The pushdown is exact for language and date filters only; `site:`, `inurl:`,
+        // `ext:` and `filetype:` are post-filters, so a plain `Count` would over-count.
+        let f = &plan.filters;
+        if f.site.is_none() && f.inurl.is_none() && f.ext.is_empty() && f.filetype.is_empty() {
+            return searcher
+                .search(query.as_ref(), &Count)
+                .map(|n| u64::try_from(n).unwrap_or(u64::MAX))
+                .map_err(|e| IndexError::Internal(e.to_string()));
+        }
+        // Otherwise count through the same post-filter a search applies, bounded by
+        // [`SCAN_LIMIT`].
+        let top = searcher
+            .search(query.as_ref(), &TopDocs::with_limit(SCAN_LIMIT))
+            .map_err(|e| IndexError::Internal(e.to_string()))?;
+        let mut survivors = 0_u64;
+        for (_, address) in top {
+            let doc: TantivyDocument = searcher
+                .doc(address)
+                .map_err(|e| IndexError::Corrupt(e.to_string()))?;
+            if passes_filters(
+                plan,
+                &text_of(&doc, self.fields.url),
+                &text_of(&doc, self.fields.host),
+                opt_text(&doc, self.fields.lang).as_deref(),
+                opt_text(&doc, self.fields.content_type).as_deref(),
+                date_of(&doc, self.fields.published_at),
+                now,
+            ) {
+                survivors = survivors.saturating_add(1);
+            }
+        }
+        Ok(survivors)
     }
 
     fn document(&self, doc_id: DocId) -> Result<Option<DocumentMetadata>> {

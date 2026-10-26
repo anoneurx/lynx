@@ -66,7 +66,7 @@ pub async fn search(
         .map_err(|_| ApiErrorKind::IndexUnavailable)?;
     let total = state
         .reader
-        .count(&plan)
+        .count(&plan, now)
         .map_err(|_| ApiErrorKind::IndexUnavailable)?;
     let gen = state.reader.generation();
 
