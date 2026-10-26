@@ -77,7 +77,10 @@ pub fn decode(
     };
 
     let mut decoder: Box<dyn Read> = match encoding.as_str() {
-        "gzip" | "x-gzip" => Box::new(flate2::read::GzDecoder::new(reader)),
+        // Multi-member: a body can legally be several concatenated gzip members (HTTP
+        // proxies and resumable downloads do this); a single-member decoder would
+        // silently truncate after the first one.
+        "gzip" | "x-gzip" => Box::new(flate2::read::MultiGzDecoder::new(reader)),
         "br" => Box::new(brotli::Decompressor::new(reader, 32 * 1024)),
         other => return Err(DecompressError::UnsupportedEncoding(other.to_string())),
     };
@@ -148,6 +151,20 @@ mod tests {
         let raw = gzip(&payload);
         let out = decode("gzip", &raw, 1 << 20, 1000).unwrap();
         assert_eq!(out, payload);
+    }
+
+    #[test]
+    fn gzip_multi_member_streams_are_fully_decoded() {
+        // A body may be several concatenated gzip members. A single-member decoder
+        // would stop after the first, silently truncating the body.
+        let first = b"first member payload ".repeat(10);
+        let second = b"second member payload".repeat(10);
+        let mut raw = gzip(&first);
+        raw.extend(gzip(&second));
+        let out = decode("gzip", &raw, 1 << 20, 1000).unwrap();
+        let mut expected = first.clone();
+        expected.extend_from_slice(&second);
+        assert_eq!(out, expected);
     }
 
     #[test]

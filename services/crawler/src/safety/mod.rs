@@ -46,6 +46,11 @@ pub const HARD_MAX_TIMEOUT_MS: u64 = 60_000;
 /// Hard ceiling on the redirect budget.
 pub const HARD_MAX_REDIRECTS: u8 = 10;
 
+/// Ports below this value may not be allowlisted at all, except the two web ports.
+/// A URL-supplied connection to `ssh`/`smtp`/`dns` et al. is never legitimate for a
+/// crawler driven by fetched links.
+pub const ALLOWED_LOW_PORT_FLOOR: u16 = 1024;
+
 /// Why a URL was refused. Every variant is a permanent denial for that URL.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum SafetyError {
@@ -115,6 +120,9 @@ pub enum PolicyError {
     /// The port allowlist is empty.
     #[error("the port allowlist must not be empty")]
     EmptyPorts,
+    /// The allowlist contains a port below the low-port floor, other than 80 and 443.
+    #[error("port {0} is below the low-port floor (only 80 and 443 may be listed)")]
+    DangerousPort(u16),
 }
 
 /// A DNS resolution failure.
@@ -272,6 +280,14 @@ impl FetchPolicy {
         if allowed_ports.is_empty() {
             return Err(PolicyError::EmptyPorts);
         }
+        // A low port is a service the operator did not mean to expose to fetch decisions
+        // made from URLs: an attacker-controlled URL choosing port 22/25/53 would reach
+        // ssh/smtp/dns. Only the two web ports may fall under the floor.
+        for &port in &allowed_ports {
+            if port < ALLOWED_LOW_PORT_FLOOR && port != 80 && port != 443 {
+                return Err(PolicyError::DangerousPort(port));
+            }
+        }
         if max_redirects > HARD_MAX_REDIRECTS {
             return Err(PolicyError::MaxRedirects(max_redirects));
         }
@@ -327,6 +343,11 @@ impl FetchPolicy {
     /// control. The name is deliberately alarming.
     #[must_use]
     pub fn dangerously_allow_private_addresses(mut self) -> Self {
+        tracing::warn!(
+            target: "lynx::crawler::safety",
+            "private-address policy ajar: dangerously_allow_private_addresses() enabled for \
+             this policy; the SSRF address gate is disabled for fetches under it"
+        );
         self.allow_private_addresses = true;
         self
     }
@@ -674,5 +695,38 @@ mod tests {
             FetchPolicy::new(vec![80], HARD_MAX_REDIRECTS + 1, ResourceLimits::default()).is_err()
         );
         assert!(FetchPolicy::new(vec![], 5, ResourceLimits::default()).is_err());
+    }
+
+    #[test]
+    fn dangerous_low_ports_are_rejected_in_the_allowlist() {
+        for ports in [
+            vec![22],
+            vec![25],
+            vec![53],
+            vec![80, 22],
+            vec![443, 23, 8080],
+            vec![1],
+        ] {
+            assert_eq!(
+                FetchPolicy::new(ports.clone(), 5, ResourceLimits::default())
+                    .err()
+                    .expect("should be refused"),
+                PolicyError::DangerousPort(
+                    *ports
+                        .iter()
+                        .find(|&&p| p < ALLOWED_LOW_PORT_FLOOR && p != 80 && p != 443)
+                        .unwrap()
+                ),
+                "{ports:?}"
+            );
+        }
+        // The two web ports are exactly the exception, and anything at or above the
+        // floor is fine.
+        for ports in [vec![80], vec![443], vec![80, 443], vec![8080, 8443]] {
+            assert!(
+                FetchPolicy::new(ports.clone(), 5, ResourceLimits::default()).is_ok(),
+                "{ports:?}"
+            );
+        }
     }
 }

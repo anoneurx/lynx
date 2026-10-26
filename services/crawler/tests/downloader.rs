@@ -1,8 +1,9 @@
 //! End-to-end downloader behaviour against the fixture origin (loopback only).
 //!
 //! Every cap the downloader claims to enforce is exercised here with a server that
-//! tries to violate it: a streamed body over the limit, a lying `Content-Length`, a
-//! gzip bomb, a stalled body, a redirect loop, and a redirect into link-local space.
+//! tries to violate it: a streamed body over the limit, a declared length over the
+//! cap, a gzip bomb, a stalled body, a redirect loop, a redirect into link-local
+//! space, a non-web scheme, and a redirect chain past the budget.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -110,6 +111,70 @@ async fn refuses_a_declared_length_over_the_cap() {
         .await
         .unwrap_err();
     assert_eq!(error, FetchError::ContentTooLarge);
+}
+
+#[tokio::test]
+async fn rejects_non_web_schemes() {
+    let (port, _base) = server().await;
+    for url in [
+        "file:///etc/passwd",
+        "gopher://example.com/1selector",
+        "javascript:alert(1)",
+        "data:text/html,hello",
+    ] {
+        let error = downloader(port, limits()).fetch(url).await.unwrap_err();
+        assert_eq!(error.class(), ErrorClass::SafetyDenied, "{url}");
+        assert!(matches!(error, FetchError::Safety(_)), "{url}: {error:?}");
+    }
+}
+
+#[tokio::test]
+async fn exhausts_the_redirect_budget() {
+    // A chain longer than the policy allows must be cut, not followed.
+    let (port, base) = server().await;
+    let strict = FetchPolicy::new(vec![port], 2, limits())
+        .unwrap()
+        .dangerously_allow_private_addresses();
+    let error = Downloader::new(strict, Arc::new(StaticResolver::new()))
+        .fetch(&format!("{base}/redirect/chain/3"))
+        .await
+        .unwrap_err();
+    assert_eq!(error.class(), ErrorClass::RedirectLoop, "{error:?}");
+}
+
+#[tokio::test]
+async fn the_global_budget_bounds_even_a_patient_idle_timeout() {
+    // `read_idle_timeout_ms` alone would wait 5 s; the whole fetch must give up much
+    // sooner because the *total* budget (300 ms) is shared across every deadline.
+    let (port, base) = server().await;
+    let mut tight = limits();
+    tight.read_idle_timeout_ms = 5_000;
+    tight.total_timeout_ms = 300;
+    let started = std::time::Instant::now();
+    let error = downloader(port, tight)
+        .fetch(&format!("{base}/slow"))
+        .await
+        .unwrap_err();
+    // Either the body idle or the request timeout fires; both are retryable connect-
+    // class. What matters is the 5 s idle sacrifice to the 300 ms budget.
+    assert_eq!(error.class(), ErrorClass::TimeoutConnect, "{error:?}");
+    assert!(started.elapsed() < std::time::Duration::from_millis(2_000));
+}
+
+#[tokio::test]
+async fn follows_a_long_chain_within_the_global_budget() {
+    // Nine quick hops under a single 5 s budget: per-hop caps are clamped by whatever
+    // is left, so a fast chain is never penalised.
+    let (port, base) = server().await;
+    let wide = FetchPolicy::new(vec![port], 9, limits())
+        .unwrap()
+        .dangerously_allow_private_addresses();
+    let response = Downloader::new(wide, Arc::new(StaticResolver::new()))
+        .fetch(&format!("{base}/redirect/chain/9"))
+        .await
+        .unwrap();
+    assert_eq!(response.redirects.len(), 9);
+    assert_eq!(response.status, 200);
 }
 
 #[tokio::test]

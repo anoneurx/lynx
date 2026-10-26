@@ -187,16 +187,24 @@ pub struct FetchResponse {
 ///
 /// Returns `None` when the value is neither, so the caller falls back to its own
 /// backoff curve rather than trusting an unparseable header.
+///
+/// The returned delay is clamped to [`MAX_RETRY_AFTER_SECONDS`]: the header is
+/// attacker-controlled, and an unclamped hour claim would pin a URL in cooldown for
+/// as long as the value asserted.
 #[must_use]
 pub fn parse_retry_after(value: &str, now: OffsetDateTime) -> Option<u64> {
     let trimmed = value.trim();
-    if let Ok(seconds) = trimmed.parse::<u64>() {
-        return Some(seconds);
-    }
-    let when = OffsetDateTime::parse(trimmed, &Rfc2822).ok()?;
-    let delta = (when - now).whole_seconds();
-    u64::try_from(delta).ok()
+    let seconds = if let Ok(seconds) = trimmed.parse::<u64>() {
+        seconds
+    } else {
+        let when = OffsetDateTime::parse(trimmed, &Rfc2822).ok()?;
+        u64::try_from((when - now).whole_seconds()).ok()?
+    };
+    Some(seconds.min(MAX_RETRY_AFTER_SECONDS))
 }
+
+/// The longest `Retry-After` or `Crawl-delay`-class deference the crawler accepts.
+pub const MAX_RETRY_AFTER_SECONDS: u64 = 3_600;
 
 fn retry_after_from(headers: &HeaderMap) -> Option<u64> {
     let value = headers.get(RETRY_AFTER)?.to_str().ok()?;
@@ -254,7 +262,16 @@ impl Downloader {
         let initial = validate_url(&parsed, &self.policy, self.resolver.as_ref()).await?;
         let mut chain = crate::safety::RedirectChain::start(&initial, self.policy.max_redirects());
 
+        // One absolute budget for the *whole* fetch, redirect hops included. A per-hop
+        // budget multiplies with the redirect count, letting a chain keep the socket
+        // open `max_redirects × total_timeout` — an attacker-controlled parameter.
+        let budget = Duration::from_millis(self.policy.limits().total_timeout_ms);
+        let started = std::time::Instant::now();
+
         loop {
+            let remaining = budget
+                .checked_sub(started.elapsed())
+                .ok_or(FetchError::TimeoutHeaders)?;
             let hop = chain
                 .hops()
                 .last()
@@ -270,8 +287,8 @@ impl Downloader {
                 .port_or_known_default()
                 .ok_or_else(|| FetchError::InvalidUrl(hop.url.to_string()))?;
 
-            let client = self.build_client(&host, port, &hop.addresses)?;
-            let response = self.send(&client, &hop.url).await?;
+            let client = self.build_client(&host, port, &hop.addresses, remaining)?;
+            let response = self.send(&client, &hop.url, remaining).await?;
 
             if is_redirect(response.status().as_u16()) {
                 let location = response
@@ -288,7 +305,7 @@ impl Downloader {
                 continue;
             }
 
-            return self.read_body(response, &chain).await;
+            return self.read_body(response, &chain, remaining).await;
         }
     }
 
@@ -297,14 +314,23 @@ impl Downloader {
         host: &str,
         port: u16,
         addresses: &[IpAddr],
+        remaining: Duration,
     ) -> Result<Client, FetchError> {
         let limits = self.policy.limits();
+        // Each per-hop timeout is clamped to what is left of the global budget, so a
+        // hop can never outlive the fetch it belongs to.
         let mut builder = Client::builder()
             .redirect(Policy::none())
             .no_proxy()
             .user_agent(&self.user_agent)
-            .connect_timeout(Duration::from_millis(limits.connect_timeout_ms))
-            .timeout(Duration::from_millis(limits.total_timeout_ms))
+            .connect_timeout(Self::clamp(
+                Duration::from_millis(limits.connect_timeout_ms),
+                remaining,
+            ))
+            .timeout(Self::clamp(
+                Duration::from_millis(limits.total_timeout_ms),
+                remaining,
+            ))
             .pool_max_idle_per_host(2);
 
         // Pin the socket to the addresses the gate validated. An IP-literal host needs
@@ -322,8 +348,16 @@ impl Downloader {
             .map_err(|error| FetchError::ClientBuild(error.to_string()))
     }
 
-    async fn send(&self, client: &Client, url: &Url) -> Result<Response, FetchError> {
-        let deadline = Duration::from_millis(self.policy.limits().header_timeout_ms);
+    async fn send(
+        &self,
+        client: &Client,
+        url: &Url,
+        remaining: Duration,
+    ) -> Result<Response, FetchError> {
+        let deadline = Self::clamp(
+            Duration::from_millis(self.policy.limits().header_timeout_ms),
+            remaining,
+        );
         let request = client
             .get(url.clone())
             .header(ACCEPT, ACCEPT_VALUE)
@@ -344,10 +378,20 @@ impl Downloader {
         }
     }
 
+    /// The smaller of two durations.
+    fn clamp(timeout: Duration, cap: Duration) -> Duration {
+        if timeout > cap {
+            cap
+        } else {
+            timeout
+        }
+    }
+
     async fn read_body(
         &self,
         mut response: Response,
         chain: &crate::safety::RedirectChain,
+        remaining: Duration,
     ) -> Result<FetchResponse, FetchError> {
         let limits = self.policy.limits();
         let status = response.status();
@@ -386,7 +430,10 @@ impl Downloader {
             .to_string();
 
         let mut compressed: Vec<u8> = Vec::new();
-        let idle = Duration::from_millis(limits.read_idle_timeout_ms);
+        let idle = Self::clamp(
+            Duration::from_millis(limits.read_idle_timeout_ms),
+            remaining,
+        );
         loop {
             match tokio::time::timeout(idle, response.chunk()).await {
                 Err(_) => return Err(FetchError::TimeoutBody),
@@ -485,6 +532,36 @@ mod tests {
         assert_eq!(parse_retry_after("  30 ", now), Some(30));
         assert_eq!(parse_retry_after("", now), None);
         assert_eq!(parse_retry_after("soon", now), None);
+    }
+
+    #[test]
+    fn retry_after_is_clamped_to_an_hour() {
+        let now = OffsetDateTime::now_utc();
+        assert_eq!(
+            parse_retry_after("360000000", now),
+            Some(MAX_RETRY_AFTER_SECONDS)
+        );
+        assert_eq!(
+            parse_retry_after("3660000", now),
+            Some(MAX_RETRY_AFTER_SECONDS)
+        );
+    }
+
+    #[test]
+    fn retry_after_http_date_is_clamped_and_past_dates_expire() {
+        let now = OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap();
+        let far = now + time::Duration::seconds(1_000_000);
+        assert_eq!(
+            parse_retry_after(far.format(&Rfc2822).unwrap().as_str(), now),
+            Some(MAX_RETRY_AFTER_SECONDS)
+        );
+        // A date in the past is unusable, not a negative delay: the caller falls back
+        // to its own backoff curve.
+        let past = now - time::Duration::seconds(100);
+        assert_eq!(
+            parse_retry_after(past.format(&Rfc2822).unwrap().as_str(), now),
+            None
+        );
     }
 
     #[test]

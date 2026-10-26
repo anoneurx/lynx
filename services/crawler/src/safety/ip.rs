@@ -148,6 +148,18 @@ fn classify_v6(ip: Ipv6Addr) -> AddressClass {
         return classify_v4(embedded_v4(segments[1], segments[2]));
     }
 
+    // Teredo 2001:0::/32. The server part is out of our control and the client part is
+    // an obfuscated (bit-inverted) IPv4 address that can loop back; the whole /32 is an
+    // IETF protocol assignment, so it is denied as one.
+    if segments[0] == 0x2001 && segments[1] == 0x0000 {
+        return AddressClass::ProtocolAssignment;
+    }
+
+    // Documentation 2001:db8::/32.
+    if segments[0] == 0x2001 && segments[1] == 0x0db8 {
+        return AddressClass::Documentation;
+    }
+
     AddressClass::Public
 }
 
@@ -277,5 +289,48 @@ mod tests {
     fn public_ipv6_is_public() {
         assert_eq!(classify(v6("2606:4700:4700::1111")), AddressClass::Public);
         assert!(is_publicly_routable(v6("2001:4860:4860::8888")));
+    }
+
+    #[test]
+    fn denies_teredo_whole() {
+        // 2001:0::/32: even with a "public-looking" client part the range matches.
+        for ip in [
+            "2001:0::",
+            "2001:0::1",
+            // The client part is bit-inverted, so `~127.0.0.1` encoded here would
+            // otherwise sneak past an unwrap-the-IPv4 implementation.
+            "2001:0:ffff:ffff:ffff:ffff:ffff:ffff",
+            "2001:0000:4136:e378:8000:63bf:3fff:fdd2",
+        ] {
+            assert_eq!(
+                classify(v6(ip)),
+                AddressClass::ProtocolAssignment,
+                "ip {ip}"
+            );
+            assert!(!is_publicly_routable(v6(ip)), "ip {ip}");
+        }
+    }
+
+    #[test]
+    fn denies_ipv6_documentation_range() {
+        for ip in [
+            "2001:db8::",
+            "2001:db8::1",
+            "2001:db8:dead:beef::1",
+            "2001:db8:ffff:ffff:ffff:ffff:ffff:ffff",
+        ] {
+            assert_eq!(classify(v6(ip)), AddressClass::Documentation, "ip {ip}");
+            assert!(!is_publicly_routable(v6(ip)), "ip {ip}");
+        }
+    }
+
+    #[test]
+    fn ipv6_boundaries_around_teredo_and_documentation_are_public() {
+        // `2001:1::` and `2001:2::` are outside 2001:0::/32; `2001:db7::` and
+        // `2001:db9::` are outside 2001:db8::/32. (`2001:0:1::1` is *inside* Teredo.)
+        for ip in ["2001:1::1", "2001:2::1", "2001:db7::1", "2001:db9::1"] {
+            assert_eq!(classify(v6(ip)), AddressClass::Public, "ip {ip}");
+            assert!(is_publicly_routable(v6(ip)), "ip {ip}");
+        }
     }
 }

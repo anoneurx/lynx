@@ -9,6 +9,36 @@ engine yet.
 
 ## [Unreleased]
 
+### Hardened (crawler security)
+
+- **IPv6 deny set completed.** Teredo `2001:0::/32` (obfuscated client part, denied whole
+  as a protocol assignment) and IETF documentation `2001:db8::/32` are now classified and
+  refused on every resolved address, closing the gap next to the existing NAT64/6to4
+  unwrapping.
+- **Dangerous ports cannot be allowlisted.** `FetchPolicy::new` rejects any allowlist
+  containing a port below 1024 other than 80 and 443 (`PolicyError::DangerousPort`), so a
+  config mistake cannot turn URL-driven fetches into probes of ssh/smtp/dns et al.
+- **One budget for the whole fetch.** The downloader now runs a single absolute
+  `Instant` deadline across every redirect hop; each hop's connect, header, idle, and
+  request timeouts are clamped to what remains of the budget. Previously a chain kept
+  a fresh full budget per hop — `max_redirects × total_timeout` of attacker-controlled
+  wall-clock.
+- **Multi-member gzip bodies decode fully.** `MultiGzDecoder` replaces the single-member
+  `GzDecoder`; concatenated members (proxies, resumable downloads) no longer truncate
+  after the first.
+- **`Retry-After` and `Crawl-delay` are clamped** (`MAX_RETRY_AFTER_SECONDS` 3600,
+  `MAX_CRAWL_DELAY_SECONDS` 86400): server-supplied delays are attacker-controlled and
+  must not pin a URL or a host out for as long as the header claims.
+- **`robots.txt` matcher input is bounded.** `GroupSelection::decision` truncates the
+  request path to `MAX_PATH_LEN` on a UTF-8 character boundary before the
+  `O(pattern × path)` glob, so an over-long URL cannot stretch matching work.
+- **`dangerously_allow_private_addresses` warns.** The deliberate defeat of the SSRF
+  gate now emits a `WARN` at construction, so a test-only builder leaking into
+  production config is visible in logs.
+- **New end-to-end tests**: non-web schemes (`file:`, `gopher:`, `javascript:`,
+  `data:`), redirect-budget exhaustion against `/redirect/chain/:n`, the global budget
+  cutting a patient idle timeout, and a 9-hop chain under one budget.
+
 ### Changed (performance)
 
 - **`collection_stats` no longer rescans the corpus.** The Tantivy reader computes

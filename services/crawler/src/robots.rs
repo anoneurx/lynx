@@ -340,8 +340,13 @@ impl RobotsRules {
 impl GroupSelection {
     /// Decide whether `path` may be fetched. The longest matching pattern wins;
     /// `Allow` wins a tie.
+    ///
+    /// `path` is attacker-controlled (it comes from a fetched URL), and the matcher is
+    /// `O(pattern × path)`, so it is clamped to [`MAX_PATH_LEN`] first — on a UTF-8
+    /// character boundary — before matching.
     #[must_use]
     pub fn decision(&self, path: &str) -> RobotsDecision {
+        let path = clamp_path(path);
         let mut best: Option<&Rule> = None;
         let mut best_specificity = 0usize;
 
@@ -425,7 +430,26 @@ fn parse_crawl_delay(value: &str) -> Option<u64> {
     if !seconds.is_finite() || seconds < 0.0 {
         return None;
     }
-    Some(seconds.ceil() as u64)
+    // Attacker-controlled: an absurd `Crawl-delay` must not pin a host out of the
+    // frontier for as long as the value claims.
+    let seconds = seconds.ceil() as u64;
+    Some(seconds.min(MAX_CRAWL_DELAY_SECONDS))
+}
+
+/// The longest `Crawl-delay` honoured, in seconds.
+pub const MAX_CRAWL_DELAY_SECONDS: u64 = 24 * 60 * 60;
+
+/// The longest path the matcher sees: `path`, truncated to [`MAX_PATH_LEN`] bytes on a
+/// character boundary.
+fn clamp_path(path: &str) -> &str {
+    if path.len() <= MAX_PATH_LEN {
+        return path;
+    }
+    let mut end = MAX_PATH_LEN;
+    while !path.is_char_boundary(end) {
+        end -= 1;
+    }
+    &path[..end]
 }
 
 #[cfg(test)]
@@ -521,6 +545,35 @@ mod tests {
         );
         let invalid = RobotsRules::parse("User-agent: *\nCrawl-delay: -5\n");
         assert_eq!(invalid.select(USER_AGENT_GROUP).crawl_delay_seconds(), None);
+    }
+
+    #[test]
+    fn crawl_delay_is_clamped_to_a_day() {
+        let parsed = RobotsRules::parse("User-agent: *\nCrawl-delay: 999999999\n");
+        assert_eq!(
+            parsed.select(USER_AGENT_GROUP).crawl_delay_seconds(),
+            Some(MAX_CRAWL_DELAY_SECONDS)
+        );
+    }
+
+    #[test]
+    fn an_overlong_path_is_clamped_before_matching() {
+        let sel = rules_for("User-agent: *\nDisallow: /private\n");
+        // Just over the cap, and the same path prefixed so the clamp lands mid-`/`.
+        let long = format!("/private/{}", "a".repeat(MAX_PATH_LEN));
+        assert_eq!(sel.decision(&long), RobotsDecision::Disallow);
+        assert!(long.len() > MAX_PATH_LEN);
+        // Matching works on the clamped prefix: a path whose *clamped* head is private
+        // is disallowed even though the unclamped tail is not part of the pattern run.
+        let mut boundary = String::from("/private/");
+        while boundary.len() <= MAX_PATH_LEN {
+            boundary.push('é'); // 2 bytes each, so the clamp lands mid-character
+        }
+        assert!(boundary.len() > MAX_PATH_LEN);
+        assert_eq!(sel.decision(&boundary), RobotsDecision::Disallow);
+        // And clamping never panics on any byte length up to and past the cap.
+        let innocuous = format!("/public/{}", "b".repeat(MAX_PATH_LEN + 64));
+        assert_eq!(sel.decision(&innocuous), RobotsDecision::Allow);
     }
 
     #[test]

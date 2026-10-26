@@ -27,6 +27,7 @@ Applied to every URL, before every connection, and again for every redirect hop:
 1. scheme      ∈ {http, https}                      else deny(unsupported_scheme)
 2. userinfo    absent                               else deny(userinfo_not_allowed)
 3. port        ∈ configured allowlist (80, 443)      else deny(port_not_allowed)
+   allowlist   itself refuses sub-1024 ports other than 80/443 at build time
 4. hostname    non-empty, no NUL, no control chars   else deny(malformed_host)
 5. literals    decimal/octal/hex/short forms decoded  else deny(encoded_literal)
 6. DNS         resolve A + AAAA                       else deny(dns_failure)
