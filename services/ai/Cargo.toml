@@ -9,7 +9,17 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
+axum.workspace = true
+blake3.workspace = true
 lynx-common.workspace = true
+lynx-config.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+time.workspace = true
+tokio.workspace = true
+tower.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true

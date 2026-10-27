@@ -9,6 +9,56 @@ engine yet.
 
 ## [Unreleased]
 
+### Added (implementation Step 18 — the Astra answer layer, optional by default)
+
+- **`lynx-ai` crate end-to-end** (§Z Step 18; off by default and irrelevant to any
+  deployment that leaves `ai.enabled = false`): a strictly-lowercase plane that
+  summarises top-ranked sources and cites them, failing closed on every failure.
+  Engine order: kill switch → daily token budget → circuit breaker → cache
+  (hashed key over question + pinned model + grounded doc ids, TTL from config) →
+  source preparation (unicode sanitise, injection screen, token-budgeted
+  truncation with provenance offsets) → prompt assembly (compile-time system
+  prompt + delimited `<data-source>` channel) → one model call → budget charge →
+  citation verification → cache put. All timing through the injected
+  `lynx_common::time::Clock`; budget day-roll and cache TTL are clock-driven.
+- **Citation verification, fail-closed** (`services/ai/src/verify.rs`): every
+  sentence must carry a valid `[n]` (`1..=max_ordinal`); trailing citations stay
+  attached to the sentence they support (`. [2]` never leaks into the next
+  sentence); uncited or bogus-index sentences are stripped; more-than-half
+  stripped discards the whole summary with the constant fallback message
+  (`"The retrieved sources could not be reliably summarised."`), and a wholly
+  uncited output is that refusal rather than an empty-content technicality.
+  `==50%` strip is the documented ceiling.
+- **Injection defences** (`sanitise.rs`, `injection.rs`, `prompt.rs` + the
+  adversarial suite `tests/injection.rs`): zero-width/BiDi/variation-selector
+  removal and an intent-driven partial confusables fold *before* detection, so
+  obfuscation evasions (`ign\u{200B}ore`, spaced `system :`, Cyrillic і/а
+  lookalikes) are caught on the cleaned text; flagged sources are dropped
+  entirely and ordinals renumber densely; a passage-closing-the-data-tag escape
+  attempt is dropped; material that survives screening stays inside the labelled
+  data channel (pinned by position in the assembled prompt); outputs with
+  uncited injected instructions are refused by the verifier.
+- **Providers** (`provider.rs`): a closed enum — `Mock` (deterministic, offline;
+  extractive with `[n]` citations, scripted fixtures for the fail-closed tests)
+  and `OpenAiCompatible` (one pinned endpoint, `temperature 0`, `top_p 0.1`,
+  `response_format: json_object`, schema-validated `{"text": ...}` contract,
+  char-estimate fallback when usage is omitted).
+- **`lynx-ai` binary** (`src/bin/lynx-ai.rs`): `POST /v1/answer` taking the
+  already-ranked SERP head from the search plane and returning either a verified
+  answer or a typed refusal slug (`killed | budget_exhausted | circuit_open |
+  no_sources | unreliable_summary | empty_output | provider_error`) — failures
+  are refusals, never 5xx. Config is the layered TOML the other planes use
+  (`config/example.toml` + `config/$LYNX_PROFILE.toml`, environment-validated).
+- **Configuration contracts** (`lynx-config` validation, with tests): when
+  `ai.enabled`, `provider = "none"`, `require_citations = false`, or
+  `fail_closed = false` never validate — citation verification and fail-closed
+  are non-negotiable in every environment (docs/ai/astra.md); production
+  additionally requires a pinned model id and an `https://` endpoint.
+- Docs: "v0.1 implementation scope (honest notes)" appendix in
+  `docs/ai/astra.md` — content-blind sentence verification (bounded blast
+  radius, not entailment), denylist detector with containment not depending on
+  it, per-replica process-local controls, ~4-chars/token estimates.
+
 ### Added (implementation Step 17 — privacy hardening)
 
 - **Global Privacy Control** (`packages/security/src/privacy.rs` + a

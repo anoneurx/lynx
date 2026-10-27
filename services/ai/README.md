@@ -1,7 +1,8 @@
 # `services/ai` — Astra, the optional answer layer
 
-**Binary:** `lynx-ai`. **Default:** `LYNX_AI_ENABLED=false`.
-Full design: [docs/ai/](../../docs/ai/README.md).
+**Binary:** `lynx-ai`. **Default:** `ai.enabled = false` (shipped off).
+Full design: [docs/ai/](../../docs/ai/README.md), implementation scope and honest
+v0.1 limits: [docs/ai/astra.md](../../docs/ai/astra.md#v01-implementation-scope-honest-notes).
 
 Astra is a **strictly optional, strictly downstream** subsystem. Retrieval happens first
 and independently; Astra summarises retrieved sources and cites them. If Astra is off,

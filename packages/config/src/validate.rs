@@ -103,6 +103,32 @@ pub fn validate(config: &Config) -> Result<(), Vec<ValidationIssue>> {
         }
     }
 
+    // ── §Z Step 18: answer-layer contracts (any environment) ─────────────────
+    // The answer layer only exists with these settings; a config that turns
+    // them off configures a different product (docs/ai/astra.md).
+    if config.ai.enabled {
+        if config.ai.provider == "none" {
+            issues.push(ValidationIssue::new(
+                "ai.provider",
+                "ai.enabled requires a concrete provider",
+            ));
+        }
+        if !config.ai.require_citations {
+            issues.push(ValidationIssue::new(
+                "ai.require_citations",
+                "citation verification is a non-negotiable contract of the \\
+                 answer layer (docs/ai/astra.md)",
+            ));
+        }
+        if !config.ai.fail_closed {
+            issues.push(ValidationIssue::new(
+                "ai.fail_closed",
+                "fail-closed (no verified citations → no answer) is a \\
+                 non-negotiable contract of the answer layer (docs/ai/astra.md)",
+            ));
+        }
+    }
+
     // ── Production-only rules ───────────────────────────────────────────────────
     if prod {
         if matches!(config.core.log_format, crate::schema::LogFormat::Pretty) {
@@ -142,16 +168,19 @@ pub fn validate(config: &Config) -> Result<(), Vec<ValidationIssue>> {
             ));
         }
         if config.ai.enabled {
-            if config.ai.provider == "none" {
-                issues.push(ValidationIssue::new(
-                    "ai.provider",
-                    "ai.enabled requires a concrete provider",
-                ));
-            }
             if config.ai.model.trim().is_empty() {
                 issues.push(ValidationIssue::new(
                     "ai.model",
                     "ai.enabled requires a pinned model id in production",
+                ));
+            }
+            // The endpoint a production process confides its corpus snippets
+            // to must not leak them in plain text over the network.
+            if !config.ai.endpoint.starts_with("https://") {
+                issues.push(ValidationIssue::new(
+                    "ai.endpoint",
+                    "ai endpoint must be https in production: the queries and \
+                     source snippets it carries are corpus-grade content",
                 ));
             }
         }
@@ -314,6 +343,57 @@ mod tests {
         c.ai.model = String::new();
         let issues = validate(&c).unwrap_err();
         assert!(issues.iter().any(|i| i.field == "ai.model"));
+    }
+
+    #[test]
+    fn production_requires_an_https_ai_endpoint() {
+        let mut c = dev();
+        c.core.environment = Environment::Production;
+        c.core.instance_id = "prod-1".into();
+        c.ai.enabled = true;
+        c.ai.provider = "openai-compatible".into();
+        c.ai.model = "m-1".into();
+        c.ai.endpoint = "http://ai.internal:8080/v1".into();
+        let issues = validate(&c).unwrap_err();
+        assert!(issues.iter().any(|i| i.field == "ai.endpoint"));
+
+        let mut ok = c;
+        ok.ai.endpoint = "https://ai.internal:8443/v1".into();
+        let faults = validate(&ok).unwrap_err();
+        assert!(
+            !faults.iter().any(|i| i.field == "ai.endpoint"),
+            "https endpoint accepted: {faults:?}"
+        );
+    }
+
+    #[test]
+    fn disabling_citation_verification_or_fail_closed_never_validates() {
+        for field in ["require_citations", "fail_closed"] {
+            let mut c = dev();
+            c.ai.enabled = true;
+            c.ai.provider = "openai-compatible".into();
+            c.ai.model = "m-1".into();
+            c.ai.endpoint = "https://ai.test/v1".into();
+            match field {
+                "require_citations" => c.ai.require_citations = false,
+                "fail_closed" => c.ai.fail_closed = false,
+                _ => unreachable!(),
+            }
+            let issues = validate(&c).unwrap_err();
+            assert!(
+                issues.iter().any(|i| { i.field == format!("ai.{field}") }),
+                "{field} is non-negotiable: docs/ai/astra.md"
+            );
+        }
+    }
+
+    #[test]
+    fn an_ai_provider_named_none_cannot_back_an_enabled_plane() {
+        let mut c = dev();
+        c.ai.enabled = true;
+        c.ai.provider = "none".into();
+        let issues = validate(&c).unwrap_err();
+        assert!(issues.iter().any(|i| i.field == "ai.provider"));
     }
 
     #[test]
