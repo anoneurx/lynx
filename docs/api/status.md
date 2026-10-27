@@ -134,4 +134,4 @@ operator needs to know which one is the problem.
 
 - [../operations/monitoring.md](../operations/monitoring.md) — the metrics behind these values
 - [../operations/index-rebuild.md](../operations/) — how a generation is built
-- [openapi.yaml](./openapi.yaml) — the contract
+- [openapi.yaml](../../API.md) — the contract

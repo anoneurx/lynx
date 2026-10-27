@@ -13,7 +13,7 @@ infrastructure/monitoring/
 │   │   ├── index.yml          doc count, commit latency, segment growth, compaction
 │   │   ├── queue.yml          frontier depth, oldest item age, claim latency
 │   │   └── capacity.yml       disk, memory, CPU, connection pools, object store
-├── grafana/dashboards/        JSON dashboards (search, crawler, index, system, privacy)
+├── grafana/dashboards/        JSON dashboards (overview, api, crawler, index)
 ├── alertmanager/              routing, silences, escalation policy
 └── log-pipeline.yml           redaction rules applied before logs are persisted
 ```

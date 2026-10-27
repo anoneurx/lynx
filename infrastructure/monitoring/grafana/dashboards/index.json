@@ -1,0 +1,104 @@
+{
+  "uid": "lynx-index",
+  "title": "LYNX Index & Capacity",
+  "description": "Index-plane detail plus capacity signals: generation age and size, build failures, merge behaviour, disk and memory headroom.",
+  "tags": ["lynx"],
+  "schemaVersion": 39,
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "panels": [
+    {
+      "type": "row",
+      "title": "Generations",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Generation age (hours)",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 1 },
+      "targets": [
+        {
+          "expr": "(time() - lynx_index_generation_created_seconds) / 3600",
+          "legendFormat": "{{shard}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Documents per shard",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 1 },
+      "targets": [
+        { "expr": "lynx_index_generation_docs", "legendFormat": "shard {{shard}}" }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Build health",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 8 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Build duration records",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 9 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(lynx_index_build_duration_seconds_bucket[10m])) by (le))",
+          "legendFormat": "p99"
+        },
+        {
+          "expr": "histogram_quantile(0.5, sum(rate(lynx_index_build_duration_seconds_bucket[10m])) by (le))",
+          "legendFormat": "p50"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Build failures and merge duration",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 9 },
+      "targets": [
+        { "expr": "increase(lynx_index_build_failures_total[30m])", "legendFormat": "failures" },
+        { "expr": "avg(lynx_index_merge_duration_seconds) by (shard)", "legendFormat": "merge (s) {shard}" }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Capacity",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 16 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Free space ratio on persistent mounts",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 17 },
+      "targets": [
+        {
+          "expr": "node_filesystem_avail_bytes{mountpoint=~\"/var/lib/(lynx|postgres)\"} / node_filesystem_size_bytes{mountpoint=~\"/var/lib/(lynx|postgres)\"}",
+          "legendFormat": "{{mountpoint}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Memory available ratio",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 17 },
+      "targets": [
+        {
+          "expr": "node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes",
+          "legendFormat": "available"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Data handling",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 24 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Erase-filtered-queue oldest item age",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 25 },
+      "targets": [
+        { "expr": "lynx_takedown_queue_max_age_seconds", "legendFormat": "oldest age (s)" }
+      ]
+    }
+  ]
+}

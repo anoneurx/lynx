@@ -1,0 +1,62 @@
+# Search-plane latency and cache behaviour.
+#
+# The latency histogram carries endpoint + status_class only; p95/p99 are read as
+# histogram_quantile. Cache hit ratio is generation-scoped so a reload is visible
+# as a step, not as noise. Runbook anchors match docs/operations/runbooks.md.
+
+groups:
+  - name: search
+    rules:
+      - record: lynx_api_search_latency_p99
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(lynx_http_request_duration_seconds_bucket{endpoint="/api/v1/search"}[5m])) by (le))
+
+      - record: lynx_api_search_latency_p50
+        expr: |
+          histogram_quantile(0.5,
+            sum(rate(lynx_http_request_duration_seconds_bucket{endpoint="/api/v1/search"}[5m])) by (le))
+
+      - alert: LynxAPILatencyP99Search
+        expr: lynx_api_search_latency_p99 > 0.25
+        for: 15m
+        labels:
+          severity: warning
+          plane: api
+        annotations:
+          summary: "Search p99 above 250 ms for 15m"
+          description: "Cold cache after reload is the common cause; segment merge backlog second."
+          runbook: "docs/operations/runbooks.md#LynxAPILatencyP99Search"
+
+      - record: lynx_api_cache_hit_ratio
+        expr: |
+          sum(rate(lynx_cache_lookup_total{kind="hit"}[5m])) by (service)
+            /
+          sum(rate(lynx_cache_lookup_total[5m])) by (service)
+
+      - alert: LynxAPICacheMissFlood
+        expr: (1 - lynx_api_cache_hit_ratio) > 0.70
+        for: 30m
+        labels:
+          severity: warning
+          plane: api
+        annotations:
+          summary: "Cache hit ratio below 30% for 30m at a stable generation"
+          description: "Generation reloads reset the cache atomically; a ratio this low means cache failure."
+          runbook: "docs/operations/runbooks.md#LynxAPICacheMissFlood"
+
+      - alert: LynxClientDenialSpike
+        expr: |
+          sum(rate(lynx_http_requests_total{kind="denied"}[15m])) by (service, endpoint)
+            /
+          1
+            >
+          max(lynx_http_denied_baseline_per_second) * 8
+        for: 15m
+        labels:
+          severity: warning
+          plane: api
+        annotations:
+          summary: "Rate-limited responses at 8x the trailing-day median (endpoint {{ $labels.endpoint }})"
+          description: "A runaway client or a misconfigured limit. The limiter records no client identity."
+          runbook: "docs/operations/runbooks.md#LynxClientDenialSpike"

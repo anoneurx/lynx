@@ -104,7 +104,7 @@ transaction is deliberately short: it does no I/O beyond the queue itself. Every
 
 Claim latency is the metric that decides whether this design still works. If claim latency
 or lock contention becomes a bottleneck under measurement, that is the trigger recorded in
-[ADR-0008](../adr/0008-frontier-queue.md) to move to a dedicated broker — not a guess made
+an ADR (superseding this one) to move to a dedicated broker — not a guess made
 in advance.
 
 ## Politeness interaction
@@ -123,7 +123,7 @@ before claiming a URL for host H:
 Budgets are enforced **independently of robots**. A site that returns `Allow: /` gets no
 more budget than one that returns nothing, and budget exhaustion drops the URL with a
 recorded reason rather than retrying forever. See
-[ADR-0020](../adr/0020-crawl-budget-policy.md) and
+[ADR-0020](../adr/0010-crawler-architecture.md) and
 [politeness.md](./politeness.md).
 
 ## Retry and backoff

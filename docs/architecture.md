@@ -162,7 +162,7 @@ erDiagram
 
 Index fields and weights are defined in
 [docs/indexing/index-schema.md](./indexing/index-schema.md). Index technology choice
-and its escape hatch are in [ADR-0002](./adr/0002-search-index.md).
+and its escape hatch are in [ADR-0002](./adr/0003-tantivy-index.md).
 
 ## 6. Ranking pipeline
 
@@ -233,15 +233,15 @@ addresses.
 
 | Decision | Choice | Why | ADR |
 | -------- | ------ | --- | --- |
-| Primary language | Rust | Untrusted-input safety, no GC latency, single binary | [0003](./adr/0003-primary-language.md) |
-| Service shape | Modular monolith + workers | No premature microservices; independent scaling via process boundaries | [0001](./adr/0001-project-architecture.md) |
-| Search index | Tantivy behind a trait | Rust-native, embeddable, BM25F; replaceable | [0002](./adr/0002-search-index.md) |
-| Primary DB | PostgreSQL | Operational state needs relational integrity | [0004](./adr/0004-database.md) |
-| Frontier queue | Postgres `SKIP LOCKED` | One less dependency; migrate to broker when measured | [0008](./adr/0008-frontier-queue.md) |
-| Frontend | Vite + React + Tailwind | One component model, self-hosted assets | [0009](./adr/0009-frontend-rendering.md) |
-| Ranking | Feature-based, versioned config | Explainability, reproducibility, safe A/B | [0010](./adr/0010-ranking-framework.md) |
-| AI | Optional, isolated, retrieval-grounded | Never let generation replace retrieval | [0015](./adr/0015-ai-integration-boundary.md) |
-| IDs | UUIDv7 | Time-ordered, index-friendly, non-enumerable | [0017](./adr/0017-identifier-strategy.md) |
+| Primary language | Rust | Untrusted-input safety, no GC latency, single binary | [0003](./adr/0001-rust-language.md) |
+| Service shape | Modular monolith + workers | No premature microservices; independent scaling via process boundaries | 0001 |
+| Search index | Tantivy behind a trait | Rust-native, embeddable, BM25F; replaceable | [0002](./adr/0003-tantivy-index.md) |
+| Primary DB | PostgreSQL | Operational state needs relational integrity | [0004](./adr/0005-postgres-operational.md) |
+| Frontier queue | Postgres `SKIP LOCKED` | One less dependency; migrate to broker when measured | [0008](./crawler/frontier.md) |
+| Frontend | Vite + React + Tailwind | One component model, self-hosted assets | 0009 |
+| Ranking | Feature-based, versioned config | Explainability, reproducibility, safe A/B | [0010](./adr/0013-ranking-pipeline.md) |
+| AI | Optional, isolated, retrieval-grounded | Never let generation replace retrieval | [0015](./ai/astra.md) |
+| IDs | UUIDv7 | Time-ordered, index-friendly, non-enumerable | 0017 |
 
 ## 9. What deliberately does not exist in v0.1
 
@@ -250,7 +250,7 @@ addresses.
 - No distributed index or cluster orchestration.
 - No JavaScript execution in the crawler.
 - No full-page HTML archive (extract and store text; see
-  [ADR-0016](./adr/0016-content-storage-policy.md)).
+  [ADR-0016](./indexing/pipeline.md)).
 - No agentic AI loop over untrusted content.
 
 See [ROADMAP.md](../ROADMAP.md) for when each of these is reconsidered and why.

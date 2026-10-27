@@ -1,0 +1,109 @@
+{
+  "uid": "lynx-overview",
+  "title": "LYNX Overview",
+  "description": "Golden signals across planes. Every panel label is in the permitted set (docs/operations/observability.md); a panel that needs a request-derived label is a privacy defect, not a panel.",
+  "tags": ["lynx"],
+  "schemaVersion": 39,
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "panels": [
+    {
+      "type": "row",
+      "title": "Traffic",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Requests per second by surface",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 1 },
+      "targets": [
+        {
+          "expr": "sum(rate(lynx_http_requests_total[1m])) by (endpoint)",
+          "legendFormat": "{{endpoint}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Crawled pages fetched per second",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 1 },
+      "targets": [
+        {
+          "expr": "sum(rate(lynx_crawler_fetches_total{kind=\"success\"}[1m])) by (service)",
+          "legendFormat": "success"
+        },
+        {
+          "expr": "sum(rate(lynx_crawler_fetches_total{kind=\"denied\"}[1m])) by (service)",
+          "legendFormat": "denied"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Errors",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 8 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Server failure ratio by surface",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 9 },
+      "targets": [
+        {
+          "expr": "sum(rate(lynx_http_requests_total{status_class=\"5xx\"}[5m])) by (endpoint) / sum(rate(lynx_http_requests_total[5m])) by (endpoint)",
+          "legendFormat": "{{endpoint}}"
+        },
+        {
+          "type": "thresholdsStyle",
+          "colorMode": "critical"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Error budget burn (1h pace)",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 9 },
+      "targets": [
+        {
+          "expr": "sum(increase(lynx_http_requests_total{status_class=\"5xx\"}[1h])) / sum(increase(lynx_http_requests_total[1h]))",
+          "legendFormat": "hourly failure ratio"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Latency",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 16 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Search p50 and p99",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 17 },
+      "targets": [
+        { "expr": "lynx_api_search_latency_p50", "legendFormat": "p50" },
+        { "expr": "lynx_api_search_latency_p99", "legendFormat": "p99" }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Planes",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 24 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Frontier depth and index generation age",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 25 },
+      "targets": [
+        { "expr": "lynx_frontier_queue_depth", "legendFormat": "frontier depth" },
+        { "expr": "time() - lynx_index_generation_created_seconds", "legendFormat": "generation age (s)" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Active index documents",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 25 },
+      "targets": [
+        { "expr": "lynx_index_generation_docs", "legendFormat": "shard {{shard}}" }
+      ]
+    }
+  ]
+}

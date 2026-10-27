@@ -139,4 +139,4 @@ reachable in document order, so a client can implement a plain `<select>` fallba
 - [../search/suggestions.md](../search/suggestions.md) — how suggestions are produced
 - [../search/cache.md](../search/cache.md) — cache-key derivation
 - [../privacy/privacy-model.md](../privacy/privacy-model.md) — the no-log commitment
-- [openapi.yaml](./openapi.yaml) — the contract
+- [openapi.yaml](../../API.md) — the contract

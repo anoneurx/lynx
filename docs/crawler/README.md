@@ -36,7 +36,7 @@ flowchart TD
 | [politeness.md](./politeness.md) | Rate limiting, per-host budgets, `Retry-After`, backoff, abuse of origin |
 
 Security-critical: [safety.md](./safety.md) and
-[docs/security/ssrf-defense.md](../security/ssrf-defense.md) require two reviewers, fuzz
+[docs/security/ssrf-defense.md](../security/ssrf-protection.md) require two reviewers, fuzz
 coverage, and the adversarial test suite in [tests/crawler](../../tests/crawler/README.md).
 
 ## Non-negotiables
@@ -80,10 +80,10 @@ Full reference: [config/example.toml](../../config/example.toml).
 
 1. **Robots is a policy input, not a trust input.** A site that says `Allow: /` gets no
    more budget than one that does not, and a site cannot use robots to buy politeness
-   credit it has not earned. See [ADR-0020](../adr/0020-crawl-budget-policy.md).
+   credit it has not earned. See [ADR-0020](../adr/0010-crawler-architecture.md).
 2. **IP validation is authoritative, hostnames are not.** Every URL is resolved and every
    returned address checked, because DNS names lie and IP literals are encoded in creative
-   ways. See [ADR-0012](../adr/0012-crawler-ssrf-defense.md).
+   ways. See [ADR-0012](../adr/0010-crawler-architecture.md).
 3. **Redirects are re-validated, not followed.** Client libraries follow redirects
    transparently by default, which would skip the safety gate entirely. LYNX handles each
    hop itself.
@@ -91,4 +91,4 @@ Full reference: [config/example.toml](../../config/example.toml).
    is an honest limitation rather than a security risk. See
    [ROADMAP non-goals](../../ROADMAP.md#what-is-explicitly-not-planned).
 5. **Extracted text only, never raw HTML.** See
-   [ADR-0016](../adr/0016-content-storage-policy.md).
+   [ADR-0016](../indexing/pipeline.md).

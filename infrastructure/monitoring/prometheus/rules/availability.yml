@@ -1,0 +1,54 @@
+# Availability: the search SLO and its error-budget burn.
+#
+# The search plane's promise is 99.9% of in-surface requests answered correctly
+# (2xx) inside the documented p99 (docs/operations/monitoring.md). Budget math:
+# 0.1% of 30 days is ~43 minutes; the landing page for every alert here is
+# docs/operations/runbooks.md.
+#
+# Labels on every series: service, endpoint, method, status_class, kind. No
+# request-derived label exists (docs/operations/observability.md).
+
+groups:
+  - name: availability
+    rules:
+      - alert: LynxAPIHighErrorRate
+        expr: |
+          sum(rate(lynx_http_requests_total{status_class="5xx"}[5m])) by (service, endpoint)
+            /
+          sum(rate(lynx_http_requests_total[5m])) by (service, endpoint)
+          > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          plane: api
+        annotations:
+          summary: "5xx rate above 5% on {{ $labels.endpoint }} for 2m"
+          description: "The surface is failing; check reader reload state first."
+          runbook: "docs/operations/runbooks.md#LynxAPIHighErrorRate"
+
+      - alert: LynxAPIErrorBudgetBurn
+        expr: |
+          (
+            sum(increase(lynx_http_requests_total{status_class="5xx"}[1h])) by (service)
+              /
+            sum(increase(lynx_http_requests_total[1h])) by (service)
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          plane: api
+        annotations:
+          summary: "Hourly failure ratio 5%: error budget burning at ~14x sustainable"
+          description: "A fast hour at this pace reduces the monthly budget materially."
+          runbook: "docs/operations/runbooks.md#LynxAPIErrorBudgetBurn"
+
+      - alert: LynxAPIStatusDegraded
+        expr: max_over_time(lynx_status_degraded[30m]) == 1
+        for: 30m
+        labels:
+          severity: warning
+          plane: api
+        annotations:
+          summary: "/status has reported degraded for 30m"
+          description: "The honesty surface is saying so; open the panel it names."
+          runbook: "docs/operations/runbooks.md#LynxAPIStatusDegraded"

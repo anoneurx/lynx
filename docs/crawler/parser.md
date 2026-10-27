@@ -172,7 +172,7 @@ struct ParsedDocument {
 ```
 
 No raw HTML field. No script content. No base64 blobs. See
-[ADR-0016](../adr/0016-content-storage-policy.md).
+[ADR-0016](../indexing/pipeline.md).
 
 ## Fuzzing
 

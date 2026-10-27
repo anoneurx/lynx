@@ -127,7 +127,7 @@ Enforced by the production validator, which refuses to start otherwise:
 
 ## Sizing
 
-Per-worker resources (targets, measured — see [docs/operations/capacity.md](./docs/operations/capacity.md)):
+Per-worker resources (targets, measured — see [docs/operations/capacity.md](./docs/operations/scaling.md)):
 
 | Service | vCPU | Memory | Notes |
 | ------- | ---- | ------ | ----- |
@@ -145,7 +145,7 @@ history, and the AI token budget. Budget alerts are configured per stage.
 
 ## Backups and disaster recovery
 
-Summary; full detail in [docs/operations/disaster-recovery.md](./docs/operations/disaster-recovery.md).
+Summary; full detail in [docs/operations/disaster-recovery.md](./docs/operations/backup.md).
 
 | Artifact | Reproducible | Backup | RPO | RTO |
 | -------- | ------------- | ------ | --- | --- |

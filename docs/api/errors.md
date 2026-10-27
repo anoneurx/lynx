@@ -150,4 +150,4 @@ everything they need.
 - [rate-limits.md](./rate-limits.md) — the 429 path in detail
 - [status.md](./status.md) — how availability is reported
 - [versioning.md](./versioning.md) — the stability policy
-- [openapi.yaml](./openapi.yaml) — the codes in the contract
+- [openapi.yaml](../../API.md) — the codes in the contract

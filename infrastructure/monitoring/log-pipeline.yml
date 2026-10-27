@@ -1,0 +1,57 @@
+# Log pipeline: redaction before persistence.
+#
+# Layered on the shape-only logging the application already provides
+# (packages/logging): application logs cannot hold a search string by
+# construction, and this pipeline is the second wall — anything that should never
+# be persisted is dropped before it reaches storage, and anything path-like is
+# stripped of its request-line tail.
+#
+# Enforcement in code: scripts/check-privacy.sh greps the monitoring tree and the
+# Rust emission sites for banned field names; this file is the pipeline that would
+# run if one slipped through anyway.
+#
+# Retention follows the config contract (docs/operations/observability.md): hot
+# storage 14 days, then gone. No long-term archive — anything worth keeping is in
+# Postgres, which has its own backup/restore discipline (docs/operations/backup.md).
+
+pipeline:
+  source: lynx-app-logs
+  sinks:
+    hot:
+      retention_days: 14
+
+processors:
+  - drop_fields:
+      # A field present under any of these names is removed regardless of shape.
+      # Deliberately matches case-insensitively on the exact token only: a field
+      # named `query` is a leak; a field named `matched_terms_count` is a shape.
+      names:
+        - query
+        - q
+        - term
+        - terms
+        - url
+        - doc_id
+        - document_id
+        - request_uri
+        - ip
+        - client_ip
+        - user_agent
+        - email
+        - user_agent_group
+        - referer
+        - cookie
+        - authorization
+
+  - rewrite:
+      # Path-like fields: keep the path, drop the request line. The path (route
+      # shape, e.g. /api/v1/search) is safe; the tail is a query string in
+      # disguise.
+      fields: [path, resource_path, uri_path]
+      transform: strip_after_first("?")
+
+  - drop_events_where:
+      # Any event that claims to carry a query string is not sanitised further:
+      # it is dropped whole. Redaction that keeps a sanitized copy of a leaky
+      # event invites misjudged partial views; absence is the only certain state.
+      match: event_fields_contain_param_names

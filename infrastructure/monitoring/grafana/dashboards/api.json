@@ -1,0 +1,93 @@
+{
+  "uid": "lynx-api",
+  "title": "LYNX Search Deep Dive",
+  "description": "The serving plane in detail: latency heatmap by surface, cache behaviour, rate-limit denials. Labels follow the permitted set; abandoned-mode surfaces carry no request-derived labels.",
+  "tags": ["lynx"],
+  "schemaVersion": 39,
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "panels": [
+    {
+      "type": "row",
+      "title": "Latency distribution",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "type": "heatmap",
+      "title": "Request duration heatmap",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 1 },
+      "targets": [
+        {
+          "expr": "sum(increase(lynx_http_request_duration_seconds_bucket[1m])) by (le)",
+          "legendFormat": "{{le}}"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Same data as records",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Search latency records (p50 / p95 / p99)",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 10 },
+      "targets": [
+        { "expr": "lynx_api_search_latency_p50", "legendFormat": "p50" },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(lynx_http_request_duration_seconds_bucket{endpoint=\"/api/v1/search\"}[5m])) by (le))",
+          "legendFormat": "p95"
+        },
+        { "expr": "lynx_api_search_latency_p99", "legendFormat": "p99" }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Cache",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Cache hit ratio",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 18 },
+      "targets": [
+        {
+          "expr": "sum(rate(lynx_cache_lookup_total{kind=\"hit\"}[5m])) / sum(rate(lynx_cache_lookup_total[5m]))",
+          "legendFormat": "hit ratio"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Cache entries resident",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 18 },
+      "targets": [
+        { "expr": "lynx_cache_entries", "legendFormat": "entries" }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Denials and honesty surface",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 25 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Rate-limit denials per second",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 26 },
+      "targets": [
+        {
+          "expr": "sum(rate(lynx_http_requests_total{kind=\"denied\"}[1m])) by (endpoint)",
+          "legendFormat": "{{endpoint}}"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Degraded flag",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 26 },
+      "targets": [
+        { "expr": "max(lynx_status_degraded)", "legendFormat": "degraded" }
+      ]
+    }
+  ]
+}

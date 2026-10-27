@@ -1,0 +1,95 @@
+{
+  "uid": "lynx-crawler",
+  "title": "LYNX Crawler",
+  "description": "Crawl-plane detail: fetch outcomes by class, politeness denials, SSRF firewall blocks, frontier depth and item age. Host labels name crawled origins only.",
+  "tags": ["lynx"],
+  "schemaVersion": 39,
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "panels": [
+    {
+      "type": "row",
+      "title": "Fetch outcomes",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Fetches per second by outcome class",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 1 },
+      "targets": [
+        {
+          "expr": "sum(rate(lynx_crawler_fetches_total[1m])) by (kind)",
+          "legendFormat": "{{kind}}"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Frontier health",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Frontier depth",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 10 },
+      "targets": [
+        { "expr": "lynx_frontier_queue_depth", "legendFormat": "depth" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Oldest pending item age",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 10 },
+      "targets": [
+        { "expr": "lynx_frontier_oldest_item_age_seconds", "legendFormat": "oldest age (s)" }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Politeness and defence",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Politeness denials per second",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 18 },
+      "targets": [
+        {
+          "expr": "sum(rate(lynx_crawler_fetches_total{kind=\"denied\"}[5m])) by (service)",
+          "legendFormat": "denied"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "SSRF firewall blocks per second",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 18 },
+      "targets": [
+        {
+          "expr": "sum(rate(lynx_crawler_ssrf_blocks_total[5m])) by (service)",
+          "legendFormat": "blocks"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Throughput limits",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 25 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Fetch duration records",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 26 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum(rate(lynx_crawler_fetch_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(lynx_crawler_fetch_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p99"
+        }
+      ]
+    }
+  ]
+}

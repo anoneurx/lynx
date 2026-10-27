@@ -1,0 +1,50 @@
+# Prometheus scrape configuration.
+#
+# Every Lynx service exposes `/metrics` on its administrative port (9090), separate
+# from the user-facing listener. Cardinality is a privacy control here: scrape
+# labels stay at the service level (cluster, node) and never carry request-derived
+# values. See docs/operations/observability.md for the permitted label contract.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: lynx
+
+scrape_configs:
+  - job_name: lynx-api
+    static_configs:
+      - targets: ['lynx-api.lynx.svc:9090']
+        labels:
+          cluster: production
+    metric_relabel_configs:
+      # Defence in depth: drop any labelled series a misconfiguration could
+      # introduce with a request-derived label. The ban list is enforced twice:
+      # in CI (scripts/check-privacy.sh) and in the scrape path.
+      - source_labels: [__name__]
+        regex: lynx_(api_client_fingerprint|paused_until_seconds)
+        action: drop
+
+  - job_name: lynx-crawler
+    static_configs:
+      - targets: ['lynx-crawler.lynx.svc:9090']
+
+  - job_name: lynx-indexer
+    static_configs:
+      - targets: ['lynx-indexer.lynx.svc:9090']
+
+  - job_name: postgres
+    static_configs:
+      - targets: ['postgres-exporter.lynx.svc:9187']
+
+  - job_name: redis
+    static_configs:
+      - targets: ['redis-exporter.lynx.svc:9121']
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager.lynx.svc:9093']

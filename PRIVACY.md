@@ -4,7 +4,7 @@
 > Where this document says "we do not store X", the architecture is arranged so that
 > storing X is not possible on the query path without an explicit code change.
 
-Read also: [docs/privacy/model.md](./docs/privacy/model.md),
+Read also: [docs/privacy/model.md](./docs/privacy/privacy-model.md),
 [docs/privacy/data-inventory.md](./docs/privacy/data-inventory.md),
 [docs/privacy/limitations.md](./docs/privacy/limitations.md).
 
@@ -66,7 +66,7 @@ Two implementation options exist. The privacy-preserving one is chosen:
 | Per-account quota | Accounts | No — accounts are profiles |
 | **Rotating salted prefix bucket (chosen)** | Nothing but the connection's source address | Yes |
 
-Mechanics, defined in [ADR-0005](./docs/adr/0005-privacy-model.md):
+Mechanics, defined in [ADR-0005](./docs/adr/0008-no-query-logging.md):
 
 - Bucket key is `HMAC-SHA256(salt_day, first_3_octets_of_IP)`.
 - `salt_day` derives from a secret held in the secret store, rotated by UTC date.
@@ -172,6 +172,6 @@ Run before every release that touches the query path:
 ## 11. Related
 
 - [THREAT_MODEL.md](./docs/threat-model.md) — privacy threats T25–T31 (see §5)
-- [docs/security/architecture.md](./docs/security/architecture.md) — technical controls
+- [docs/security/architecture.md](./docs/threat-model.md) — technical controls
 - [docs/privacy/retention.md](./docs/privacy/retention.md) — purge jobs and schedules
 - [docs/operations/observability.md](./docs/operations/observability.md) — what we do measure

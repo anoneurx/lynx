@@ -212,7 +212,7 @@ Postgres is the label; Tantivy is the content
 | Document in Tantivy, absent in Postgres | Startup reconciliation job | Re-derive the row from the index |
 | Document in Postgres, absent in Tantivy | Same job | Re-index |
 | `doc_id` collision | Impossible with ULIDs; a UUIDv7 `url` id is not a doc id | n/a |
-| Cluster id differs between systems | Cluster ids are stored as fast fields and compared | [RB-03](../../security/runbooks/index-corruption.md) |
+| Cluster id differs between systems | Cluster ids are stored as fast fields and compared | [RB-03](../security/runbooks/index-corruption.md) |
 
 Reconciliation runs on every new index generation rather than on a schedule, because a
 generation swap is precisely when the two systems could have diverged.

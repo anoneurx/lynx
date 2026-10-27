@@ -1,0 +1,24 @@
+# Frontier (work queue) rules: depth, item age, claim latency.
+#
+# Handled jointly with the crawler rules: a depth alert with no fetch stall is
+# capacity; a depth alert with a fetch stall is an outage on the crawl plane.
+
+groups:
+  - name: queue
+    rules:
+      - record: lynx_frontier_oldest_item_age_seconds
+        expr: lynx_frontier_item_age_seconds_max
+
+      - alert: LynxFrontierStarved
+        expr: |
+          (lynx_frontier_queue_depth > 10000)
+          and on(service)
+          (sum(rate(lynx_crawler_fetches_total{kind="success"}[15m])) < 0.001)
+        for: 10m
+        labels:
+          severity: critical
+          plane: crawler
+        annotations:
+          summary: "Deep frontier with zero successful fetches for 10m"
+          description: "Work exists and workers cannot take it: DNS/egress/robots, never budget."
+          runbook: "docs/operations/runbooks.md#LynxCrawlerFetchStall"

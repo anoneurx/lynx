@@ -75,6 +75,20 @@ pub fn validate(config: &Config) -> Result<(), Vec<ValidationIssue>> {
             "at least one port must be allowed",
         ));
     }
+    // Observability (§Z Step 16): sampling ratio and retention are privacy controls,
+    // not tuning knobs — a full-sample trace contains URLs from the request line.
+    if !(0.0..=1.0).contains(&config.observability.tracing_sample_ratio) {
+        issues.push(ValidationIssue::new(
+            "observability.tracing_sample_ratio",
+            "must be within [0, 1]",
+        ));
+    }
+    if config.observability.tracing && config.observability.tracing_endpoint.trim().is_empty() {
+        issues.push(ValidationIssue::new(
+            "observability.tracing_endpoint",
+            "tracing enabled without a collector endpoint ships spans nowhere",
+        ));
+    }
     let s = &config.ranking.signals;
     for (name, value) in [
         ("ranking.signals.bm25", s.bm25),
@@ -147,6 +161,22 @@ pub fn validate(config: &Config) -> Result<(), Vec<ValidationIssue>> {
                 "production requires an instance id for log correlation",
             ));
         }
+        if config.observability.log_retention_days > 14 {
+            issues.push(ValidationIssue::new(
+                "observability.log_retention_days",
+                "logs are dropped after 14 days: there is nothing in them worth \
+                 archiving that is not in Postgres, and longer retention is a privacy \
+                 liability (docs/operations/monitoring.md)",
+            ));
+        }
+        if config.observability.tracing_sample_ratio > 0.01 {
+            issues.push(ValidationIssue::new(
+                "observability.tracing_sample_ratio",
+                "production head-sampling must stay at or below 1% — traces carry the \
+                 request line, and high-rate traces are a privacy leak with a short \
+                 time constant",
+            ));
+        }
     }
 
     if issues.is_empty() {
@@ -186,6 +216,49 @@ mod tests {
         c.privacy.query_logging = true;
         let issues = validate(&c).unwrap_err();
         assert!(issues.iter().any(|i| i.field == "privacy.query_logging"));
+    }
+
+    #[test]
+    fn sampling_ratio_must_be_a_probability() {
+        let mut c = dev();
+        c.observability.tracing_sample_ratio = 1.5;
+        let issues = validate(&c).unwrap_err();
+        assert!(issues
+            .iter()
+            .any(|i| i.field == "observability.tracing_sample_ratio"));
+    }
+
+    #[test]
+    fn production_caps_traces_at_one_percent_and_logs_at_fourteen_days() {
+        let mut c = dev();
+        c.core.environment = Environment::Production;
+        c.core.instance_id = "prod-1".into();
+        c.observability.tracing_sample_ratio = 0.50;
+        c.observability.log_retention_days = 30;
+        let issues = validate(&c).unwrap_err();
+        let fields: Vec<&str> = issues.iter().map(|i| i.field.as_str()).collect();
+        assert!(fields.contains(&"observability.tracing_sample_ratio"));
+        assert!(fields.contains(&"observability.log_retention_days"));
+
+        // The shipping production file is inside both caps (parsed with the example
+        // layer, the way the runtime loads environment files).
+        let prod = Config::from_toml_layers(&[
+            include_str!("../../../config/example.toml"),
+            include_str!("../../../config/production.toml"),
+        ])
+        .unwrap();
+        assert!(validate(&prod).is_ok(), "{:?}", validate(&prod));
+    }
+
+    #[test]
+    fn tracing_enabled_without_a_collector_is_a_misconfiguration() {
+        let mut c = dev();
+        c.observability.tracing = true;
+        c.observability.tracing_endpoint = String::new();
+        let issues = validate(&c).unwrap_err();
+        assert!(issues
+            .iter()
+            .any(|i| i.field == "observability.tracing_endpoint"));
     }
 
     #[test]

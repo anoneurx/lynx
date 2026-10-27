@@ -93,4 +93,4 @@ mitigation rather than a filter.
 - Cross-site payloads suggesting the attacker knows LYNX's design → SEV2, and publish the
   finding in the threat model
 - Repeated, targeted attempts → publish a mitigation note; responsible disclosure is welcome
-  and [SECURITY.md](../../../../SECURITY.md) applies
+  and [SECURITY.md](../../../SECURITY.md) applies

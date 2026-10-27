@@ -15,7 +15,7 @@ Injected via Vault → ExternalSecrets → Kubernetes env vars → `LYNX_*` pref
 
 ## Schema
 
-Full JSON Schema: [`config/schema.json`](../config/schema.json)
+Full JSON Schema: [`config/schema.json`](../packages/config/src/schema.rs)
 
 ```bash
 # Validate local config

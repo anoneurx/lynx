@@ -62,12 +62,12 @@ complete specification.
 | ------------ | ---- |
 | Understand the whole system | [ARCHITECTURE.md](./docs/architecture.md), [docs/architecture/specification.md](./docs/architecture/specification.md) |
 | See the data model | [docs/database/erd.md](./docs/database/erd.md) |
-| Understand crawling & SSRF defence | [docs/crawler/](./docs/crawler/overview.md), [docs/security/ssrf-defense.md](./docs/security/ssrf-defense.md) |
+| Understand crawling & SSRF defence | [docs/crawler/](./docs/crawler/README.md), [docs/security/ssrf-defense.md](./docs/security/ssrf-protection.md) |
 | Understand ranking maths | [docs/ranking/](./docs/ranking/overview.md) |
-| Understand the query language | [docs/search/query-language.md](./docs/search/query-language.md) |
-| Understand the privacy model | [PRIVACY.md](./PRIVACY.md), [docs/privacy/](./docs/privacy/model.md) |
+| Understand the query language | [docs/search/query-language.md](./docs/search/query-parsing.md) |
+| Understand the privacy model | [PRIVACY.md](./PRIVACY.md), [docs/privacy/](./docs/privacy/privacy-model.md) |
 | Attack the design | [THREAT_MODEL.md](./docs/threat-model.md) |
-| Ship it safely | [SECURITY.md](./SECURITY.md), [docs/security/](./docs/security/architecture.md) |
+| Ship it safely | [SECURITY.md](./SECURITY.md), [docs/security/](./docs/threat-model.md) |
 | Use the API | [API.md](./API.md) |
 | Run it locally | [DEVELOPMENT.md](./DEVELOPMENT.md) |
 | Operate it | [DEPLOYMENT.md](./DEPLOYMENT.md), [docs/operations/](./docs/operations/observability.md) |

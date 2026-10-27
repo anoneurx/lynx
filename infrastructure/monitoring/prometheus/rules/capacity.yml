@@ -1,0 +1,46 @@
+# Capacity rules: disk and memory headroom on the persistent planes.
+#
+# Thresholds are early warnings, not outages — by the time a disk is near-full it
+# is too late to act calmly. The index-plane retain decision (generations kept)
+# is the first lever; see the runbook about what must never be deleted.
+
+groups:
+  - name: capacity
+    rules:
+      - alert: LynxDiskFreeLowPct
+        expr: |
+          (node_filesystem_avail_bytes{mountpoint=~"/var/lib/(lynx|postgres)"})
+            /
+          node_filesystem_size_bytes{mountpoint=~"/var/lib/(lynx|postgres)"}
+          < 0.15
+        for: 15m
+        labels:
+          severity: warning
+          plane: capacity
+        annotations:
+          summary: "Free space below 15% on {{ $labels.mountpoint }}"
+          description: "Backup retention is the first lever. Never delete a generation the reader may hold open."
+          runbook: "docs/operations/runbooks.md#LynxDiskFreeLowPct"
+
+      - alert: LynxMemoryNearLimit
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.90
+        for: 15m
+        labels:
+          severity: warning
+          plane: capacity
+        annotations:
+          summary: "Node memory above 90%"
+          description: "Levers in order: snippet length, candidate window, shard movement."
+          runbook: "docs/operations/runbooks.md#LynxMemoryNearLimit"
+
+      - alert: LynxSecretsAccessAnomaly
+        expr: increase(lynx_vault_access_total{kind="unusual"}[15m]) > 5
+        for: 0m
+        labels:
+          severity: critical
+          plane: capacity
+        annotations:
+          summary: "Unusual secret-from-identity pattern (more than 5 in 15m)"
+          description: "Rotate the touched secrets first, then read the audit trail."
+          runbook: "docs/operations/runbooks.md#LynxSecretsAccessAnomaly"

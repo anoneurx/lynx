@@ -1,0 +1,53 @@
+# Index-plane rules: generation freshness, build failures, and size regressions.
+#
+# Generation gauges are the only bounded-cardinality labels here (configured shard
+# count). Build failures are data-loss-adjacent events: the runbook fences
+# promotion of a previous generation behind corruption checks.
+
+groups:
+  - name: index
+    rules:
+      - alert: LynxIndexGenerationStale
+        expr: time() - lynx_index_generation_created_seconds > 129600
+        for: 5m
+        labels:
+          severity: warning
+          plane: index
+        annotations:
+          summary: "Current index generation older than 36h"
+          description: "The read path is fine; the build is stuck or starved."
+          runbook: "docs/operations/runbooks.md#LynxIndexGenerationStale"
+
+      - alert: LynxIndexBuildFailed
+        expr: increase(lynx_index_build_failures_total[15m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          plane: index
+        annotations:
+          summary: "Index build failed"
+          description: "Corruption checks before promoting a previous generation. A failing golden gate is also root cause here."
+          runbook: "docs/operations/runbooks.md#LynxIndexBuildFailed"
+
+      - alert: LynxIndexGenSizeDrop
+        expr: |
+          (lynx_index_generation_docs / lynx_index_generation_docs offset 6h) < 0.98
+        for: 30m
+        labels:
+          severity: warning
+          plane: index
+        annotations:
+          summary: "Generation document count dropped over 2% vs 6h ago"
+          description: "Treat as data loss until the manifest diff names the cause."
+          runbook: "docs/operations/runbooks.md#LynxIndexGenSizeDrop"
+
+      - alert: LynxTakedownQueueAged
+        expr: lynx_takedown_queue_max_age_seconds > 604800
+        for: 10m
+        labels:
+          severity: warning
+          plane: index
+        annotations:
+          summary: "A takedown item has waited over 7 days"
+          description: "Deletion is generation-scoped and verified by the next build's checksum audit."
+          runbook: "docs/operations/runbooks.md#LynxTakedownQueueAged"

@@ -120,7 +120,7 @@ LYNX_INDEX_PATH=/tmp/lynx-index
 
 ## Emergency access
 
-Break-glass procedure (documented in [RB-07](../security/RB-07.md)):
+Break-glass procedure (documented in [RB-07](../security/runbooks/secret-exposure.md)):
 
 1. On-call + security lead approve via PagerDuty.
 2. Retrieve unseal shares from offline safe (5-of-7).

@@ -185,5 +185,5 @@ and a nullable column carries a comment explaining what null means.
 ## Related
 
 - [../indexing/](../indexing/) — where the index itself lives
-- [../operations/backup-and-recovery.md](../operations/backup-and-recovery.md) — procedures
+- [../operations/backup.md](../operations/backup.md) — procedures
 - [../crawler/frontier.md](../crawler/frontier.md) — the queue's semantics

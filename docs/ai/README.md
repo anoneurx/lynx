@@ -17,8 +17,8 @@ flowchart LR
 | -------- | -------- |
 | [README.md](./README.md) | This overview |
 | [astra.md](./astra.md) | The model layer, self-hosting, grounding, constraints |
-| [evaluation.md](./evaluation.md) | How summary quality is judged |
-| [safety.md](./safety.md) | Prompt injection defence, refusal handling |
+| [evaluation.md](../testing/quality-evaluation.md) | How summary quality is judged |
+| [safety.md](../security/runbooks/prompt-injection.md) | Prompt injection defence, refusal handling |
 
 ## Principles
 

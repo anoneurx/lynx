@@ -545,7 +545,7 @@ Controls by layer:
   for admin; dual-control break-glass; full audit trail.
 - **Secrets** — never in git, images, config files, or logs; secret references only;
   `SecretString` with zeroise; rotation schedule; external secrets operator in k8s.
-- **Crawl safety** — the SSRF gate of §G and [security/ssrf-defense.md](../security/ssrf-defense.md).
+- **Crawl safety** — the SSRF gate of §G and [security/ssrf-defense.md](../security/ssrf-protection.md).
 - **Input validation** — allowlist validation, bounded lengths, `deny_unknown_fields`,
   no user regex, bounded allocation on every untrusted path.
 - **Supply chain** — pinned digests, SBOM, cosign, Trivy, `cargo-deny`, `cargo-audit`,
@@ -585,7 +585,7 @@ retrieval-time trust scoring that can exclude low-trust sources from the AI cont
 documented rule that **no** defensive measure lets page content override system
 instructions, because the architecture — not the prompt — makes that true.
 
-Designated threats and full mitigations: [ai/prompt-injection.md](../ai/prompt-injection.md).
+Designated threats and full mitigations: [ai/prompt-injection.md](../security/runbooks/prompt-injection.md).
 
 ---
 
@@ -645,7 +645,7 @@ manual approval, `helm --atomic`, index generations switchable with 24 h rollbac
 tests, and a privacy spot check before promotion.
 
 Reference sizing, per-stage resource budgets, and cost drivers:
-[DEPLOYMENT.md](../../DEPLOYMENT.md) and [operations/capacity.md](../operations/capacity.md).
+[DEPLOYMENT.md](../../DEPLOYMENT.md) and [operations/capacity.md](../operations/scaling.md).
 
 ---
 
@@ -730,27 +730,27 @@ is measured against a target rather than admired in the abstract.
 
 | ADR | Decision | Status |
 | --- | -------- | ------ |
-| [0001](../adr/0001-project-architecture.md) | Modular monolith with worker processes | Proposed |
-| [0002](../adr/0002-search-index.md) | Tantivy behind a replaceable trait | Proposed |
-| [0003](../adr/0003-primary-language.md) | Rust as the primary language | Proposed |
-| [0004](../adr/0004-database.md) | PostgreSQL as the operational database | Proposed |
-| [0005](../adr/0005-privacy-model.md) | No query persistence; salted-prefix rate limiting | Proposed |
-| [0006](../adr/0006-api-and-admin-surface.md) | axum/tower; separate admin surface | Proposed |
-| [0007](../adr/0007-html-parsing.md) | DOM parsing with hard limits | Proposed |
-| [0008](../adr/0008-frontier-queue.md) | Frontier in Postgres with `SKIP LOCKED` | Proposed |
-| [0009](../adr/0009-frontend-rendering.md) | Vite + React, prerendered static routes | Proposed |
-| [0010](../adr/0010-ranking-framework.md) | Feature-based, versioned, explainable ranking | Proposed |
-| [0011](../adr/0011-monorepo-layout.md) | Single repo, Cargo + pnpm workspaces | Proposed |
-| [0012](../adr/0012-crawler-ssrf-defense.md) | Layered SSRF defence, IP-authoritative | Proposed |
-| [0013](../adr/0013-query-language.md) | v0.1 operator set and grammar | Proposed |
-| [0014](../adr/0014-observability-cardinality.md) | Bounded cardinality, shape-only logs | Proposed |
-| [0015](../adr/0015-ai-integration-boundary.md) | Astra optional, isolated, grounded | Proposed |
-| [0016](../adr/0016-content-storage-policy.md) | Extract text, never store raw HTML | Proposed |
-| [0017](../adr/0017-identifier-strategy.md) | UUIDv7 identifiers | Proposed |
-| [0018](../adr/0018-deployment-baseline.md) | Compose for local, Helm for production | Proposed |
-| [0019](../adr/0019-ai-hallucination-control.md) | Fail-closed citation verification | Proposed |
-| [0020](../adr/0020-crawl-budget-policy.md) | Per-host budgets independent of robots | Proposed |
-| [0021](../adr/0021-supply-chain-policy.md) | Pinned, scanned, signed, reproducible builds | Proposed |
+| 0001 | Modular monolith with worker processes | Proposed |
+| [0002](../adr/0003-tantivy-index.md) | Tantivy behind a replaceable trait | Proposed |
+| [0003](../adr/0001-rust-language.md) | Rust as the primary language | Proposed |
+| [0004](../adr/0005-postgres-operational.md) | PostgreSQL as the operational database | Proposed |
+| [0005](../adr/0008-no-query-logging.md) | No query persistence; salted-prefix rate limiting | Proposed |
+| [0006](../adr/0007-separate-planes.md) | axum/tower; separate admin surface | Proposed |
+| [0007](../adr/0017-sandboxed-html-parsing.md) | DOM parsing with hard limits | Proposed |
+| [0008](../crawler/frontier.md) | Frontier in Postgres with `SKIP LOCKED` | Proposed |
+| 0009 | Vite + React, prerendered static routes | Proposed |
+| [0010](../adr/0013-ranking-pipeline.md) | Feature-based, versioned, explainable ranking | Proposed |
+| 0011 | Single repo, Cargo + pnpm workspaces | Proposed |
+| [0012](../adr/0010-crawler-architecture.md) | Layered SSRF defence, IP-authoritative | Proposed |
+| [0013](../search/query-parsing.md) | v0.1 operator set and grammar | Proposed |
+| [0014](../adr/0019-telemetry-opentelemetry.md) | Bounded cardinality, shape-only logs | Proposed |
+| [0015](../ai/astra.md) | Astra optional, isolated, grounded | Proposed |
+| [0016](../indexing/pipeline.md) | Extract text, never store raw HTML | Proposed |
+| 0017 | UUIDv7 identifiers | Proposed |
+| [0018](../adr/0009-kubernetes-deployment.md) | Compose for local, Helm for production | Proposed |
+| [0019](../ai/astra.md) | Fail-closed citation verification | Proposed |
+| [0020](../adr/0010-crawler-architecture.md) | Per-host budgets independent of robots | Proposed |
+| [0021](../security/secure-development.md) | Pinned, scanned, signed, reproducible builds | Proposed |
 
 ---
 

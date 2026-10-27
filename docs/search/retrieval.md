@@ -50,10 +50,10 @@ only by removing tail candidates that would not have ranked anyway.
 ## Fused retrieval
 
 Each shard performs one BM25F query across all fused fields
-([../ranking/bm25f.md](../ranking/bm25f.md)) rather than one query per field. This matters
+([BM25F](../ranking/bm25f.md)) rather than one query per field. This matters
 for correctness of the ranking signal as well as speed: per-field queries with independent
 score merging is not BM25F, and the weights would not mean what
-[bm25f.md](./bm25f.md) says they mean.
+[BM25F](../ranking/bm25f.md) says they mean.
 
 Field-specific behaviours that do require separate handling:
 

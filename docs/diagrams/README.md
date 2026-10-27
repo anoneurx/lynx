@@ -35,7 +35,7 @@ done
 ## Embedding in Markdown
 
 ```markdown
-![Data Flow](diagrams/data-flow.svg)
+![Data Flow](./data-flow.svg)
 ```
 
 Or inline (GitHub renders automatically):

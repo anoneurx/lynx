@@ -48,7 +48,7 @@ curl -s 'https://lynx.example/api/v1/search?q=rust+search+engine&count=10' | jq
 
 | Param | Type | Default | Notes |
 | ----- | ---- | ------- | ----- |
-| `q` | string | required | Query text. Operators supported — see [query-language.md](./docs/search/query-language.md) |
+| `q` | string | required | Query text. Operators supported — see [query-language.md](./docs/search/query-parsing.md) |
 | `count` | int | 10 | 1–50 |
 | `cursor` | string | — | Opaque pagination cursor from `next_cursor` |
 | `safe` | int | 0 | 0 = all results, 1 = filter explicit-content pages |

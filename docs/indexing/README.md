@@ -77,7 +77,7 @@ bound, and the honest response is to slow down rather than to drop documents sil
 
 We store extracted text, never raw HTML. Consequences:
 
-- The copyright surface stays small — see [ADR-0016](../adr/0016-content-storage-policy.md).
+- The copyright surface stays small — see [ADR-0016](./pipeline.md).
 - A parser bug or XSS in stored content cannot reach a user, because there is no stored
   markup to render.
 - Snippets are generated from stored text and HTML-escaped at render time.

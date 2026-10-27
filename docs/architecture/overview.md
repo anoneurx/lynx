@@ -72,14 +72,14 @@ Crawl Plane                    Index Plane                    Search Plane
 
 | Layer | Choice | ADR |
 | ----- | ------ | --- |
-| Language | Rust | [0001](./adr/0001-rust-language.md) |
-| Async Runtime | Tokio | [0002](./adr/0002-tokio-runtime.md) |
-| Search Index | Tantivy | [0003](./adr/0003-tantivy-index.md) |
-| Operational DB | PostgreSQL | [0005](./adr/0005-postgres-operational.md) |
-| Cache/Coordination | Redis Cluster | [0006](./adr/0006-redis-cache-coordination.md) |
-| Deployment | Kubernetes (EKS/GKE) | [0009](./adr/0009-kubernetes-deployment.md) |
-| GitOps | ArgoCD + Kustomize | [0015](./adr/0015-gitops-argocd.md) |
-| Observability | OpenTelemetry → Prometheus/Loki/Jaeger | [0019](./adr/0019-telemetry-opentelemetry.md) |
+| Language | Rust | [0001](../adr/0001-rust-language.md) |
+| Async Runtime | Tokio | [0002](../adr/0002-tokio-runtime.md) |
+| Search Index | Tantivy | [0003](../adr/0003-tantivy-index.md) |
+| Operational DB | PostgreSQL | [0005](../adr/0005-postgres-operational.md) |
+| Cache/Coordination | Redis Cluster | [0006](../adr/0006-redis-cache-coordination.md) |
+| Deployment | Kubernetes (EKS/GKE) | [0009](../adr/0009-kubernetes-deployment.md) |
+| GitOps | ArgoCD + Kustomize | [0015](../adr/0015-gitops-argocd.md) |
+| Observability | OpenTelemetry → Prometheus/Loki/Jaeger | [0019](../adr/0019-telemetry-opentelemetry.md) |
 
 ## Further Reading
 

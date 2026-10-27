@@ -34,6 +34,9 @@ mode      = "cursor"
 max_limit = 50
 
 [database]
+# The connection URL never holds a value here: it is resolved from the secret
+# manager at startup (docs/operations/secrets-management.md).
+url                  = { secret_ref = "lynx/production/postgres/app" }
 max_connections      = 50
 min_connections      = 10
 statement_timeout_ms = 30000
@@ -130,41 +133,15 @@ daily_token_budget = 2000000
 [observability]
 metrics_bind         = "0.0.0.0:9090"
 metrics_path         = "/metrics"
-tracing              = true
-tracing_endpoint     = ""          # from env
+# Head-sampled distributed tracing. Disabled here because this base file carries no
+# collector endpoint; the deployment env layer enables it with a real endpoint
+# (injected from the secret manager). The validator refuses tracing with an empty
+# endpoint at start. Sample ratio is capped at 1%: traces carry the request line.
+tracing              = false
+tracing_endpoint     = ""
 tracing_sample_ratio = 0.01
 log_retention_days   = 14
 
 [admin]
 enable_basic_auth = false
 bind              = "127.0.0.1:9091"
-
-# ── Deployments ────────────────────────────────────────────────────────────────
-# Reference settings for the deployment stages in DEPLOYMENT.md. Not exhaustive.
-
-[deploy.small]
-description  = "Single host: API, crawler, index, DB, cache all co-located"
-api_replicas  = 1
-crawler_workers = 2
-index_shards  = 1
-db            = "managed, 2 vCPU / 8 GB"
-index_memory_mb = 2048
-targets_index_documents = 2_000_000
-
-[deploy.medium]
-description  = "Split planes; Postgres and cache managed; index on separate nodes"
-api_replicas  = 2
-crawler_workers = 8
-index_shards  = 2
-db            = "managed, 4 vCPU / 16 GB"
-index_memory_mb = 4096
-targets_index_documents = 50_000_000
-
-[deploy.large]
-description  = "Distributed: LB → API cluster → sharded search cluster → distributed index"
-api_replicas  = 8
-crawler_workers = 64
-index_shards  = 16
-db            = "managed, HA, 8 vCPU / 64 GB + read replicas"
-index_memory_mb = 8192
-targets_index_documents = 5_000_000_000

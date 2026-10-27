@@ -1,5 +1,25 @@
 # Backup & Disaster Recovery
 
+## Restore rehearsal
+
+A backup that has never been restored is a hypothesis, not a backup. The standing
+check is [`infrastructure/scripts/restore-rehearsal.sh`](../../infrastructure/scripts/restore-rehearsal.sh):
+
+- **When**: at every staging DR review, and before any change to backup tooling.
+  Locally (compose stack) it rehearses `pg_dump` → scratch-restore → table-count
+  comparison, and index-generation transfer with checksums plus the symlink swap.
+  WAL-G base-backup restores and Vault Raft snapshot restore run against the
+  staging kit when that environment is provisioned.
+- **Run**: `docker compose up -d`, then the script. `--keep-workdir` preserves the
+  scratch directory for diffing.
+- **Evidence ledger** — append one line per rehearsal, newest first:
+
+| Date | Executor | Environment | What was exercised | Restore time | Outcome |
+| ---- | -------- | ----------- | ------------------ | ------------ | ------- |
+| (first entry pending first rehearsal provisioning) | | | | | |
+
+A failed rehearsal is an incident, not a note.
+
 ## What gets backed up
 
 | Data | Tool | Schedule | Retention | RPO | RTO |
@@ -128,9 +148,9 @@ vault operator raft snapshot restore /tmp/vault-snap-LATEST.snap
 
 ## Runbook links
 
-- [RB-02: Data Exfiltration Attempt](../security/RB-02.md)
-- [RB-03: Service Degradation / Outage](../security/RB-03.md)
-- [RB-07: Key Compromise](../security/RB-07.md)
+- [RB-02: Data Exfiltration Attempt](../security/runbooks/data-exposure.md)
+- [RB-03: Service Degradation / Outage](../security/runbooks/search-unavailable.md)
+- [RB-07: Key Compromise](../security/runbooks/secret-exposure.md)
 
 ## Testing
 

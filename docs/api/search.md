@@ -224,4 +224,4 @@ See [errors.md](./errors.md). The envelope is identical across every endpoint:
 - [../search/README.md](../search/README.md) — the request lifecycle
 - [../search/query-parsing.md](../search/query-parsing.md) — operator semantics
 - [../ranking/explainability.md](../ranking/explainability.md) — the signal vector
-- [openapi.yaml](./openapi.yaml) — the generated contract
+- [openapi.yaml](../../API.md) — the generated contract

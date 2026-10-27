@@ -122,6 +122,20 @@ Primary handles: crawl queue, indexer metadata, user accounts.
 
 ## Capacity planning cheat-sheet
 
+### Deployment shapes (reference)
+
+The three reference shapes from `DEPLOYMENT.md`. These are capacity targets, not
+configuration: the runtime config schema (`packages/config`) deliberately does not know
+them, so they live here rather than in loaded environment files.
+
+| Shape | Description | API replicas | Crawler workers | Index shards | Postgres | Index docs target |
+| ----- | ----------- | ------------ | --------------- | ------------ | -------- | ----------------- |
+| small | Single host: API, crawler, index, DB, cache co-located | 1 | 2 | 1 | managed, 2 vCPU / 8 GiB | 2 M |
+| medium | Split planes; Postgres + cache managed; index on separate nodes | 2 | 8 | 2 | managed, 4 vCPU / 16 GiB | 50 M |
+| large | Distributed: LB → API cluster → sharded search cluster → distributed index | 8 | 64 | 16 | managed, HA, 8 vCPU / 64 GiB + read replicas | 5 G |
+
+### By daily query volume
+
 | Daily queries | API pods | Index storage | Crawler workers | Postgres |
 | ------------- | -------- | ------------- | --------------- | -------- |
 | 100 k | 3 | 50 GiB | 5 | r6g.xlarge |

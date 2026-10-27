@@ -4,7 +4,7 @@ The HTTP surface. Seven endpoints, no accounts, no sessions, no cookies.
 
 | Document | Contents |
 | -------- | -------- |
-| [openapi.yaml](./openapi.yaml) | The machine-readable contract; everything else describes it |
+| [openapi.yaml](../../API.md) | The machine-readable contract; everything else describes it |
 | [search.md](./search.md) | `GET /search`, streaming, operators, pagination |
 | [suggestions.md](./suggestions.md) | `GET /suggestions`, typeahead contract |
 | [status.md](./status.md) | `GET /status`, freshness, health |
@@ -164,4 +164,4 @@ call would leak the query. It is a ULID, so it leaks only a creation timestamp.
 - [API.md](../../API.md) — the user-facing summary
 - [../search/](../search/) — how a query becomes a response
 - [../security/rate-limits.md](../security/) — abuse protection
-- [openapi.yaml](./openapi.yaml) — the contract that generates the client
+- [openapi.yaml](../../API.md) — the contract that generates the client

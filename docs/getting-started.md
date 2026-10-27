@@ -125,7 +125,7 @@ lynx/
 
 ## Next Steps
 
-- [API Reference](../api/README.md)
-- [Architecture Overview](../operations/README.md#architecture-in-production)
-- [Configuration Guide](../configuration.md)
+- [API Reference](./api/README.md)
+- [Architecture Overview](./architecture/overview.md)
+- [Configuration Guide](./configuration.md)
 - [Contributing](../CONTRIBUTING.md)

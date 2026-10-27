@@ -195,4 +195,4 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for review requirements and
 | `check-privacy` fails | A banned field name in a log or metric | Rename the field; do not suppress the check |
 | Port already in use | Another service | Change the port in `.env` and `docker-compose.yml` together |
 
-More: [docs/operations/troubleshooting.md](./docs/operations/troubleshooting.md).
+More: [docs/operations/troubleshooting.md](./docs/operations/runbooks.md).

@@ -22,7 +22,8 @@ Monthly and quarterly research reports.
 
 ## Search Quality
 ### NDCG@10 Trends
-![NDCG Trend](charts/ndcg_trend.png)
+The NDCG trend series is produced by the quality harness; see [quality
+evaluation](../testing/quality-evaluation.md) for the current numbers and gates.
 
 | Segment | Current | Previous | Δ |
 | ------- | ------- | -------- | - |

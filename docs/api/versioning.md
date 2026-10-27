@@ -145,6 +145,6 @@ version bump for it would train clients to expect breakage on every release.
 ## Related
 
 - [errors.md](./errors.md) — the code stability policy
-- [openapi.yaml](./openapi.yaml) — the contract
+- [openapi.yaml](../../API.md) — the contract
 - [../../CHANGELOG.md](../../CHANGELOG.md) — deprecations are announced there
 - [../ranking/explainability.md](../ranking/explainability.md) — why ranking changes are not breaks

@@ -4,7 +4,7 @@ LYNX respects `robots.txt` as a policy input. Two clarifications that matter:
 
 1. `robots.txt` is **not** a trust input. It does not buy a host extra budget, and a
    permissive `robots.txt` does not permit crawling something our own safety policy
-   refuses. See [ADR-0020](../adr/0020-crawl-budget-policy.md).
+   refuses. See [ADR-0020](../adr/0010-crawler-architecture.md).
 2. Compliance is measured and reported. A crawler that claims to respect robots and does
    not is worse than one that says it does not try.
 

@@ -1,0 +1,58 @@
+# Crawler-plane rules: fetch outcomes, politeness denials, and SSRF firewall blocks.
+#
+# Host labels name crawled origins only, never anything request-derived. Runbook
+# anchors match docs/operations/runbooks.md; SSRF triage is
+# docs/security/ssrf-protection.md-adjacent.
+
+groups:
+  - name: crawler
+    rules:
+      - alert: LynxCrawlerQueueBacklog
+        expr: lynx_frontier_queue_depth > 100000
+        for: 10m
+        labels:
+          severity: critical
+          plane: crawler
+        annotations:
+          summary: "Frontier depth above 100k for 10m"
+          description: "Capacity before conculsion: politeness budgets vs. worker count."
+          runbook: "docs/operations/runbooks.md#LynxCrawlerQueueBacklog"
+
+      - alert: LynxCrawlerFetchStall
+        expr: sum(rate(lynx_crawler_fetches_total{kind="success"}[15m])) < 0.001
+        for: 15m
+        labels:
+          severity: critical
+          plane: crawler
+        annotations:
+          summary: "Zero successful fetches for 15m"
+          description: "DNS, TLS validity, robots fetch outage, or egress policy. Logs carry class codes only."
+          runbook: "docs/operations/runbooks.md#LynxCrawlerFetchStall"
+
+      - alert: LynxCrawlerPolitenessDenied
+        expr: |
+          sum(rate(lynx_crawler_fetches_total{kind="denied"}[15m])) by (service)
+            >
+          8 * max(lynx_crawler_denied_baseline_per_second)
+        for: 15m
+        labels:
+          severity: warning
+          plane: crawler
+        annotations:
+          summary: "Politeness denials at 8x baseline"
+          description: "A host budget is wrong or the trap detector banned a legitimate origin."
+          runbook: "docs/operations/runbooks.md#LynxCrawlerQueueBacklog"
+
+      - alert: LynxSSRFBlocksSurge
+        expr: |
+          sum(rate(lynx_crawler_ssrf_blocks_total[15m])) by (service)
+            >
+          8 * max(lynx_crawler_ssrf_blocks_baseline_per_second)
+        for: 5m
+        labels:
+          severity: warning
+          plane: crawler
+        annotations:
+          summary: "SSRF firewall blocks at 8x the trailing hour"
+          description: "Ambient scanner noise vs. a page steering the crawler at private space. Kills before parse."
+          runbook: "docs/operations/runbooks.md#LynxSSRFBlocksSurge"

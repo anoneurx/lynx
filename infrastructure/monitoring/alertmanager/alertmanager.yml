@@ -1,0 +1,54 @@
+# Alertmanager routing.
+#
+# Routing philosophy: alerts are grouped by plane so one incident opens one card,
+# not fifteen.critical pages immediately; warnings consolidate into a daily
+# digest. Everything links back to docs/operations/runbooks.md, which carries the
+# action list — the alert is a door, not the answer.
+#
+# Repeat behavior: a critical alert repeats so it survives a missed page; warnings
+# never repeat inside a day (a warning that matters escalates, it does not nag).
+
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: [severity, plane]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  receiver: ops-warnings
+  routes:
+    - matchers:
+        - severity = "critical"
+      receiver: ops-critical
+      group_wait: 0s
+      continue: false
+
+receivers:
+  - name: ops-critical
+    # Endpoint from the secret manager at deploy time; no tokes in the repository.
+    webhook_configs:
+      - url: 'http://localhost:8099/lynx-alerts'
+        send_resolved: true
+
+  - name: ops-warnings
+    webhook_configs:
+      - url: 'http://localhost:8099/lynx-alerts'
+        send_resolved: false
+
+inhibit_rules:
+  # A degraded status surface is a symptom surface: when its underlying plane is
+  # already firing critical, do not add a second card for the symptom alert.
+  - source_matchers:
+      - severity = "critical"
+      - alertname =~ "LynxAPIHighErrorRate|LynxIndexBuildFailed|LynxCrawlerFetchStall"
+    target_matchers:
+      - alertname = "LynxAPIStatusDegraded"
+    equal: [service]
+
+  # A fetch stall explains a queue backlog: one incident card, not two.
+  - source_matchers:
+      - alertname = "LynxCrawlerFetchStall"
+    target_matchers:
+      - alertname = "LynxCrawlerQueueBacklog"
+    equal: [service]

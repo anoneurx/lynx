@@ -23,7 +23,7 @@ compiled only under `lynx-indexer`'s `tantivy` feature. The in-memory
 
 Nothing in `apps/api` or `services/ranker` imports a Tantivy type. This is what makes the
 index swappable — to Lucene, OpenSearch, or a custom implementation — without rewriting the
-API or the ranker. See [ADR-0002](../adr/0002-search-index.md).
+API or the ranker. See [ADR-0002](../adr/0003-tantivy-index.md).
 
 ## Fields
 
@@ -99,7 +99,7 @@ Stored (in the segment, read at result time):
 
 Not stored:
 
-- Raw HTML. Ever. See [ADR-0016](../adr/0016-content-storage-policy.md).
+- Raw HTML. Ever. See [ADR-0016](./pipeline.md).
 - Full text of very long documents in the SERP path — the snippet is generated from the
   stored body text, capped, and the full text is fetched only by the `documents/{id}`
   endpoint (which is also how the AI layer gets its passages).

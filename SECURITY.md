@@ -66,7 +66,7 @@ the linked document.
    IPv6-embedding ranges, re-validated at every redirect hop, with DNS pinned to the
    validated address. Defence in depth: the crawl plane also has a network policy denying
    all egress except 80/443 and DNS. See
-   [docs/security/ssrf-defense.md](./docs/security/ssrf-defense.md).
+   [docs/security/ssrf-defense.md](./docs/security/ssrf-protection.md).
 3. **No user profiling.** No accounts, no cookies, no client identifiers, no query logging.
    See [PRIVACY.md](./PRIVACY.md).
 4. **No third-party requests from the web app.** Enforced by CSP and asserted by tests.
@@ -88,10 +88,10 @@ the linked document.
 | Behaviour | Where |
 | --------- | ----- |
 | TLS 1.3 minimum, HSTS preloaded | [docs/security/headers.md](./docs/security/headers.md) |
-| Rate limiting without durable identifiers | [docs/privacy/model.md](./docs/privacy/model.md) |
+| Rate limiting without durable identifiers | [docs/privacy/model.md](./docs/privacy/privacy-model.md) |
 | Query strings never written to logs, metrics, or storage | [docs/privacy/telemetry.md](./docs/privacy/telemetry.md) |
-| AI answers fail closed without verified citations | [docs/ai/grounding.md](./docs/ai/grounding.md) |
-| Prompt-injection defences by architecture, not prompt wording | [docs/ai/prompt-injection.md](./docs/ai/prompt-injection.md) |
+| AI answers fail closed without verified citations | [docs/ai/grounding.md](./docs/ai/astra.md) |
+| Prompt-injection defences by architecture, not prompt wording | [docs/ai/prompt-injection.md](./docs/security/runbooks/prompt-injection.md) |
 | Migrations are expand/contract and never lock long | [docs/database/migrations.md](./docs/database/migrations.md) |
 
 ## Hardening for operators
