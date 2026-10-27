@@ -191,6 +191,21 @@ pub fn validate(config: &Config) -> Result<(), Vec<ValidationIssue>> {
                 "production requires TLS 1.3",
             ));
         }
+        // §Z Step 20: the serving index is state, not scratch space — a /tmp generation
+        // is wiped on reboot and the API boots refusing to serve (apps/api/src/reader.rs).
+        if config.index.dir.trim().is_empty() {
+            issues.push(ValidationIssue::new(
+                "index.dir",
+                "production requires an on-disk index directory",
+            ));
+        }
+        if config.index.dir.starts_with("/tmp") {
+            issues.push(ValidationIssue::new(
+                "index.dir",
+                "production refuses a /tmp index: the generation is wiped on reboot and \
+                 the API would refuse to serve; use a state path like /var/lib/lynx/index",
+            ));
+        }
         if config.ai.enabled {
             if config.ai.model.trim().is_empty() {
                 issues.push(ValidationIssue::new(
@@ -478,6 +493,31 @@ mod tests {
         c.ai.service_bind = "not-an-address".into();
         let issues = validate(&c).unwrap_err();
         assert!(issues.iter().any(|i| i.field == "ai.service_bind"));
+    }
+
+    #[test]
+    fn production_refuses_a_tmp_serving_index() {
+        let mut c = dev();
+        c.core.environment = Environment::Production;
+        c.core.instance_id = "prod-1".into();
+        c.index.dir = "/tmp/lynx-index".into();
+        let issues = validate(&c).unwrap_err();
+        assert!(issues.iter().any(|i| i.field == "index.dir"), "{issues:?}");
+
+        let mut ok = c;
+        ok.index.dir = "/var/lib/lynx/index".into();
+        let faults = validate(&ok).unwrap_err();
+        assert!(
+            !faults.iter().any(|i| i.field == "index.dir"),
+            "a state path is accepted: {faults:?}"
+        );
+
+        let mut blank = dev();
+        blank.core.environment = Environment::Production;
+        blank.core.instance_id = "prod-1".into();
+        blank.index.dir = "   ".into();
+        let issues = validate(&blank).unwrap_err();
+        assert!(issues.iter().any(|i| i.field == "index.dir"));
     }
 
     #[test]

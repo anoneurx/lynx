@@ -16,7 +16,7 @@ lynx-logging.workspace = true
 lynx-security.workspace = true
 lynx-query.workspace = true
 lynx-ranker.workspace = true
-lynx-indexer.workspace = true
+lynx-indexer = { workspace = true, features = ["tantivy"] }
 lynx-suggestions.workspace = true
 reqwest.workspace = true
 tracing.workspace = true
@@ -33,3 +33,6 @@ blake3.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

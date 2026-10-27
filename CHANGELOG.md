@@ -9,6 +9,22 @@ engine yet.
 
 ## [Unreleased]
 
+### Added (implementation Step 20 — real index bootstrap)
+
+- **`lynx-api` serves from a sealed generation, not a hardcoded fixture**
+  (`apps/api/src/reader.rs`): `index.dir` with a `generation.json` manifest is
+  opened as the serving Tantivy index in every environment; a missing
+  generation falls back to the development fixture in development/staging so
+  `cargo run` works with no crawl; a production boot without one is refused
+  with an operator-readable reason — serving an empty index to users would be
+  the outage by another name. The boot log names which surface is being
+  served. Config contract (with tests): production refuses a `/tmp` serving
+  index (`index.dir`), because the generation is wiped on reboot; the
+  shipped `config/production.toml` already pointed at `/var/lib/lynx/index`.
+- Development fixture moved out of `main` into the boot module it supports,
+  shared with the fixture's documented corpus. `lynx-indexer`'s `tantivy`
+  feature is now carried by `lynx-api` (the reader needs the engine).
+
 ### Added (implementation Step 19 — the search plane dials the answer plane)
 
 - **`GET /api/v1/search` merges verified answers** when the deployment opts in:

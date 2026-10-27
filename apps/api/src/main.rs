@@ -5,9 +5,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use lynx_indexer::InMemoryIndex;
 use lynx_ranker::Ranker;
-use time::macros::datetime;
 use tracing::info;
 
 use lynx_api::state::AppState;
@@ -20,16 +18,18 @@ async fn main() {
         return;
     }
 
-    // The answer plane: `ai.enabled` + a configured `ai.answer_service` dial the
-    // `lynx-ai` process. Any config problem here is a boot failure, not a
-    // per-request surprise (the same layered loader the other planes use).
-    let ai = match layered_ai_config() {
-        Ok(ai) => ai,
+    // The whole validated layered config: the answer plane (`ai.enabled` +
+    // `ai.answer_service` dial the `lynx-ai` process) and the serving index
+    // (`index.dir`) both come from here. Any problem is a boot failure, not a
+    // per-request surprise — the same loader every plane uses.
+    let config = match layered_config() {
+        Ok(config) => config,
         Err(error) => {
             eprintln!("lynx-api: {error}");
             return;
         }
     };
+    let ai = config.ai.clone();
     let answer_client = if ai.enabled && !ai.answer_service.is_empty() {
         match lynx_api::answer::AnswerClient::new(&ai.answer_service, ai.answer_timeout_ms) {
             Ok(client) => Some(client),
@@ -42,22 +42,25 @@ async fn main() {
         None
     };
 
-    // Minimal bootstrap: create a seeded in-memory index so /search works out of the box.
-    // This is a temporary fixture; in production, a Tantivy generation is loaded.
-    let mut index = InMemoryIndex::new();
-    let mut rust_doc = lynx_indexer::IndexedDocument::new(
-        lynx_common::ids::DocumentId::from_canonical_url("https://tokio.rs/"),
-        "https://tokio.rs/",
-        "Tokio - An asynchronous runtime for Rust",
-        "A multi-threaded asynchronous runtime for Rust, with a scheduler, timers, and an I/O driver.",
-    );
-    rust_doc.lang = Some("en".to_string());
-    rust_doc.published_at = Some(datetime!(2025-11-04 00:00 UTC));
-    rust_doc.quality_score = 0.9;
-    index.add(rust_doc);
+    // What we actually serve from: a sealed generation when one exists, the
+    // development fixture when none does, and a refusal to boot in production.
+    let serving = match lynx_api::reader::open(&config) {
+        Ok(serving) => {
+            info!(
+                service = "lynx-api",
+                "serving index: {}",
+                serving.describe()
+            );
+            serving
+        }
+        Err(error) => {
+            eprintln!("lynx-api: {error}");
+            return;
+        }
+    };
 
     let app_state = Arc::new(AppState {
-        reader: Arc::new(index),
+        reader: serving.reader(),
         ranker: Ranker::default(),
         clock: None,
         started_at: time::OffsetDateTime::now_utc(),
@@ -84,7 +87,7 @@ async fn main() {
     }
 }
 
-/// The `[ai]` section from the layered config (`config/example.toml` under
+/// The layered config (`config/example.toml` under
 /// `config/$LYNX_PROFILE.toml`), validated. The answer merge is an opt-in
 /// feature of the deployment, not of code paths: with `answer_service` empty
 /// the API never dials anything.
@@ -92,7 +95,7 @@ async fn main() {
 /// # Errors
 /// Missing/unreadable config files, parse errors, or environment-validation
 /// issues, formatted for the boot log.
-fn layered_ai_config() -> Result<lynx_config::Ai, String> {
+fn layered_config() -> Result<lynx_config::Config, String> {
     let base = std::fs::read_to_string("config/example.toml")
         .map_err(|e| format!("cannot read config/example.toml: {e}"))?;
     let profile = std::env::var("LYNX_PROFILE").unwrap_or_else(|_| "development".to_string());
@@ -110,5 +113,5 @@ fn layered_ai_config() -> Result<lynx_config::Ai, String> {
                 .join("; ")
         ));
     }
-    Ok(config.ai)
+    Ok(config)
 }
