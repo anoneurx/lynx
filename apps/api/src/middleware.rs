@@ -9,7 +9,10 @@
 //!    centrally so no handler can forget it. The documented cacheable endpoints
 //!    (`/api/v1/status`, `/api/v1/suggestions`) keep their own `Cache-Control`;
 //!    everything else is `no-store`.
-//! 3. **Rate limiting** — the rotating salted prefix-bucket limiter from
+//! 3. **Global Privacy Control** — a `Sec-GPC: 1` request is honoured by stripping any
+//!    `Set-Cookie` from the response (defence in depth: the API sets none, and a test
+//!    asserts that). See [`lynx_security::privacy`] for the reasoning.
+//! 4. **Rate limiting** — the rotating salted prefix-bucket limiter from
 //!    [`lynx_security::ratelimit`], keyed on the daily-rotating HMAC of the client
 //!    network prefix. The limiter sees no query text and stores nothing durable.
 //!
@@ -28,6 +31,7 @@ use axum::response::{IntoResponse, Response};
 use lynx_common::time::{Clock, SystemClock};
 use lynx_logging::request::{RequestId, HEADER};
 use lynx_security::headers::security_headers;
+use lynx_security::privacy::gpc_requested;
 use lynx_security::ratelimit::{client_bucket, daily_salt, SlidingWindowLimiter};
 use time::Duration;
 
@@ -251,7 +255,33 @@ pub async fn apply_security_headers(
     resp
 }
 
-/// Middleware 3: rate limit `/api/v1/search` with the rotating salted prefix bucket.
+/// Middleware 3: honour Global Privacy Control (§Z Step 17).
+///
+/// A `Sec-GPC: 1` request gets every `Set-Cookie` removed from its response. LYNX
+/// never sets cookies (spec §N: no identifiers of any kind), so on the happy path
+/// this middleware is a no-op whose *effect* is only visible in the integration
+/// tests that assert cookie-free responses for normal clients too. The strip is
+/// still real defence in depth: a future handler that regresses into setting a
+/// cookie is caught for the very clients who asked not to be tracked, before the
+/// CI test can even fire.
+///
+/// The signal itself is deliberately not logged, counted, or stored per-visitor —
+/// the [`lynx_security::privacy`] module documents why.
+pub async fn privacy_gpc(req: Request<Body>, next: Next) -> Response {
+    let gpc = gpc_requested(
+        req.headers()
+            .get_all("sec-gpc")
+            .iter()
+            .map(|v| v.to_str().ok()),
+    );
+    let mut resp = next.run(req).await;
+    if gpc && resp.headers().contains_key(header::SET_COOKIE) {
+        resp.headers_mut().remove(header::SET_COOKIE);
+    }
+    resp
+}
+
+/// Middleware 4: rate limit `/api/v1/search` with the rotating salted prefix bucket.
 ///
 /// `/api/v1/status` is exempt: it is cached at the edge for a minute by contract, and
 /// health-check loops must not starve the search surface's budget. When the limit is

@@ -538,3 +538,104 @@ fn urlencode(s: &str) -> String {
     }
     out
 }
+
+// ---------------------------------------------------------------------------
+// §Z Step 17: no-store everywhere, Global Privacy Control
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn no_store_covers_every_error_path() {
+    // 404 fallback and 405 method-not-allowed must not respsect anything that could
+    // become cache-poisoning bait either: the header is checked on every
+    // non-cacheable surface, error statuses included.
+    for (label, request) in [
+        (
+            "404 fallback",
+            Request::builder()
+                .uri("/api/v1/nope")
+                .body(Body::empty())
+                .unwrap(),
+        ),
+        (
+            "405 method",
+            Request::builder()
+                .method(axum::http::Method::POST)
+                .uri("/api/v1/search")
+                .body(Body::empty())
+                .unwrap(),
+        ),
+    ] {
+        let app = lynx_api::router::router(seeded());
+        let (status, headers, _) = collect(app.oneshot(request).await.unwrap()).await;
+        assert_ne!(
+            status,
+            StatusCode::OK,
+            "{label} must be an error to test the header path"
+        );
+        assert_eq!(
+            headers.get(header::CACHE_CONTROL).unwrap(),
+            "no-store, no-cache, must-revalidate",
+            "{label} must be no-store"
+        );
+    }
+}
+
+#[tokio::test]
+async fn rate_limited_response_is_no_store() {
+    // The 429 is constructed inside the rate-limit middleware, which sits *inside*
+    // the security-headers layer, so the envelope still wears the full set.
+    let state = {
+        let mut s = AppState::default();
+        s.started_at = datetime!(2026-02-18 00:00 UTC);
+        s.security = lynx_api::middleware::SecurityContext::with_limit(1);
+        Arc::new(s)
+    };
+    let app = lynx_api::router::router(state.clone());
+    app.oneshot(
+        Request::builder()
+            .uri("/api/v1/search?q=rust")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+    let (_, headers, _) = collect(
+        lynx_api::router::router(state)
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/search?q=rust")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(
+        headers.get(header::CACHE_CONTROL).unwrap(),
+        "no-store, no-cache, must-revalidate",
+        "a shared cache must never hold a rate-limit body"
+    );
+}
+
+#[tokio::test]
+async fn gpc_clients_get_the_identical_body_and_no_cookies() {
+    // Global Privacy Control: LYNX sets no cookies and does no tracking, so a GPC
+    // signal is honoured by construction. This test pins the two visible facts:
+    // the body is byte-identical to a non-GPC client's, and no Set-Cookie exists
+    // on either path. The middleware strip is defence in depth for a future
+    // cookie-setting regression (lynx_security::privacy documents the design).
+    let normal = get("/api/v1/search?q=rust").await;
+    let gpc = get_with_header(seeded(), "sec-gpc", "1").await;
+
+    assert_eq!(gpc.0, normal.0);
+    assert_eq!(gpc.2, normal.2, "GPC must not change the served content");
+    assert!(
+        normal.1.get(header::SET_COOKIE).is_none(),
+        "a normal response already carries no cookie"
+    );
+    assert!(
+        gpc.1.get(header::SET_COOKIE).is_none(),
+        "a GPC response must never carry a cookie"
+    );
+}

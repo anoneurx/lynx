@@ -177,6 +177,16 @@ pub fn validate(config: &Config) -> Result<(), Vec<ValidationIssue>> {
                  time constant",
             ));
         }
+        // §Z Step 17 production privacy check: the no-third-party-request invariant
+        // (spec §N) is a policy the website itself advertises in the CSP
+        // (`default-src 'none'`), so the config cannot quietly loosen it.
+        if config.privacy.third_party_assets != "forbidden" {
+            issues.push(ValidationIssue::new(
+                "privacy.third_party_assets",
+                "production refuses third-party assets; the served CSP allows none, \
+                 so a config that would load them can never work (PRIVACY.md §8)",
+            ));
+        }
     }
 
     if issues.is_empty() {
@@ -272,6 +282,26 @@ mod tests {
         let fields: Vec<&str> = issues.iter().map(|i| i.field.as_str()).collect();
         assert!(fields.contains(&"api.cors_origins"));
         assert!(fields.contains(&"core.log_format"));
+    }
+
+    #[test]
+    fn production_refuses_any_third_party_asset_policy_short_of_forbidden() {
+        let mut c = dev();
+        c.core.environment = Environment::Production;
+        c.core.instance_id = "prod-1".into();
+        c.privacy.third_party_assets = "self-hosted-only".into();
+        let issues = validate(&c).unwrap_err();
+        assert!(issues
+            .iter()
+            .any(|i| i.field == "privacy.third_party_assets"));
+
+        // The shipped production file keeps the invariant (`"forbidden"`).
+        let prod = Config::from_toml_layers(&[
+            include_str!("../../../config/example.toml"),
+            include_str!("../../../config/production.toml"),
+        ])
+        .unwrap();
+        assert_eq!(prod.privacy.third_party_assets, "forbidden");
     }
 
     #[test]

@@ -25,15 +25,6 @@ for md in $(find docs -name '*.md') *.md; do
         esac
         checked=$((checked + 1))
         if [ ! -f "$dir/$target" ] && [ ! -d "$dir/$target" ]; then
-            # Step-17 privacy-hardening deliverables whose references are
-            # intentionally pre-wired (PRIVACY.md, CONTRIBUTING.md,
-            # DEVELOPMENT.md): the pages land with the step-17 commit, which
-            # removes this exemption. Do not add anything else here — a missing
-            # page is otherwise always a defect to repair.
-            case "$dir/$target" in
-                *docs/privacy/data-inventory.md|*docs/privacy/retention.md)
-                    continue ;;
-            esac
             echo "dead link in $md: $target" >&2
             failures=$((failures + 1))
         fi

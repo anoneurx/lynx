@@ -23,6 +23,7 @@ pub mod error;
 pub mod migrations;
 pub mod pool;
 pub mod repos;
+pub mod retention;
 pub mod rows;
 
 pub use error::StorageError;

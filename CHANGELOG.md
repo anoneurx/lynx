@@ -9,6 +9,43 @@ engine yet.
 
 ## [Unreleased]
 
+### Added (implementation Step 17 — privacy hardening)
+
+- **Global Privacy Control** (`packages/security/src/privacy.rs` + a
+  `privacy_gpc` middleware in the API): `Sec-GPC: 1` requests get every
+  `Set-Cookie` stripped from their response. LYNX sets no cookies by design
+  (spec §N), so the strip is defence in depth against a future regression, and
+  the integration tests pin the observable contract: a GPC client receives the
+  byte-identical body, no cookie, and no extra headers — on both normal and
+  GPC paths.
+- **`no-store` tested everywhere** (§Z Step 17): error paths are now covered —
+  404 fallback, 405 method-not-allowed, and the rate-limit 429 envelope
+  (constructed *inside* the middleware stack) all assert
+  `Cache-Control: no-store, no-cache, must-revalidate`, so no shared cache can
+  ever hold a response body, including bodies that reveal a denial.
+- **Production privacy check** (`lynx-config` validation): production refuses
+  any `privacy.third_party_assets` value other than `forbidden` — the served
+  CSP (`default-src 'none'`) allows none, so a loosened config can never
+  actually work; test included. The always-on `query_logging` ban was already
+  enforced; this closes the remaining §N surface.
+- **Retention jobs live** (§Z Step 17): a declarative registry
+  (`services/storage/src/retention.rs`) pairing every operational table with
+  its `retention_policy` class, a fence test
+  (`services/storage/tests/retention.rs`) failing the build if a migration
+  creates a table without a class, a timed column that does not exist in its
+  DDL, or a governance table carrying a "timed" column (governance is never
+  clock-swept: `admin_audit_log` is append-only and `takedown_request` is the
+  durable removal record); the executable sweep (`lynx-db sweep` — bounded
+  parameterised deletes, reading `retain_days` live, skipping unmapped classes
+  loudly via `lynx-db retention-check` rather than guessing); and
+  `spawn_daily_sweeper` for the single-host run mode. Docs:
+  `docs/privacy/retention.md` (mechanics and run modes) and
+  `docs/privacy/data-inventory.md` (the itemised, privacy-facing inventory the
+  minimisation claim rests on).
+- **`check-links.sh` exemption removed**: the step-16 whitelist for
+  `data-inventory.md`/`retention.md` is gone; the checker is now strict again
+  (549 relative links, zero dead).
+
 ### Added (implementation Step 16 — observability & operational hardening)
 
 - **Monitoring stack as code** (`infrastructure/monitoring/`): Prometheus scrape

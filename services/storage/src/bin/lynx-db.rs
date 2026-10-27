@@ -11,6 +11,8 @@
 //! lynx-db status  [migrations-dir]   list applied and pending
 //! lynx-db seed    [seeds-dir]        run every *.sql in the seed directory
 //! lynx-db new     NAME               scaffold the next NNNN_NAME.sql
+//! lynx-db retention-check            verify retention_policy covers every timed table
+//! lynx-db sweep                      one retention sweep pass (§Z Step 17)
 //! ```
 
 use std::error::Error;
@@ -89,6 +91,46 @@ async fn run(command: &str, args: &[String]) -> Result<(), Box<dyn Error>> {
                 .get(2)
                 .map_or_else(default_migrations_dir, PathBuf::from);
             scaffold(&dir, name)?;
+        }
+        "retention-check" => {
+            let storage = connect().await?;
+            let violations = lynx_storage::retention::verify_policy(storage.pool()).await?;
+            if violations.is_empty() {
+                println!("retention policy covers every timed table");
+            } else {
+                for violation in &violations {
+                    eprintln!("violation: {violation}");
+                }
+                return Err(format!("{} retention policy violation(s)", violations.len()).into());
+            }
+            storage.close().await;
+        }
+        "sweep" => {
+            let storage = connect().await?;
+            let violations = lynx_storage::retention::verify_policy(storage.pool()).await?;
+            if !violations.is_empty() {
+                for violation in &violations {
+                    eprintln!("violation: {violation}");
+                }
+                return Err(format!(
+                    "refusing to sweep with {} policy violation(s): a half-wired \
+                     retention story is worse than a loudly absent one",
+                    violations.len()
+                )
+                .into());
+            }
+            let results = lynx_storage::retention::sweep(storage.pool()).await?;
+            if results.is_empty() {
+                println!("nothing swept (no class had a bounded policy)");
+            } else {
+                for result in &results {
+                    println!(
+                        "{:>18}  {:<18} {} row(s) deleted",
+                        result.class, result.table, result.deleted
+                    );
+                }
+            }
+            storage.close().await;
         }
         "help" | "--help" | "-h" => print_help(),
         other => {
@@ -170,8 +212,11 @@ fn print_help() {
          lynx-db up      [migrations-dir]   apply pending migrations\n  \
          lynx-db status  [migrations-dir]   list applied and pending\n  \
          lynx-db seed    [seeds-dir]        run every *.sql in the seed directory\n  \
-         lynx-db new     NAME               scaffold the next NNNN_NAME.sql\n\n\
-         DATABASE_URL must be set for up/status/seed. There is no `down`:\n\
-         migrations are forward-only; roll back the application, not the schema."
+         lynx-db new     NAME               scaffold the next NNNN_NAME.sql\n  \
+         lynx-db retention-check            verify retention_policy covers every timed table\n  \
+         lynx-db sweep                      one retention sweep pass (cron-style job)\n\n\
+         DATABASE_URL must be set for up/status/seed/retention-check/sweep. There is\n\
+         no `down`: migrations are forward-only; roll back the application, not the\n\
+         schema."
     );
 }

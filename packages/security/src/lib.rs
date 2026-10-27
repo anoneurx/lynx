@@ -14,4 +14,5 @@
 pub mod apikey;
 pub mod blocklist;
 pub mod headers;
+pub mod privacy;
 pub mod ratelimit;

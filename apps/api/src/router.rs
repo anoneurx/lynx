@@ -45,6 +45,7 @@ pub fn router(state: Arc<AppState>) -> Router {
                 .layer(axum::middleware::from_fn(
                     crate::middleware::attach_request_id,
                 ))
+                .layer(axum::middleware::from_fn(crate::middleware::privacy_gpc))
                 .layer(axum::middleware::from_fn_with_state(
                     state.clone(),
                     crate::middleware::rate_limit,
