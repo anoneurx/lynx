@@ -9,6 +9,21 @@ engine yet.
 
 ## [Unreleased]
 
+### Added (implementation Step 21 — full-loop smoke over three real services)
+
+- **`apps/api/tests/smoke.rs`** films the whole v0.1 loop the way a
+  deployment runs it: the real `lynx-api` router over a **sealed Tantivy
+  generation** in a temp dir, dialing the **real `lynx_ai::engine::AnswerEngine`**
+  (with its real `OpenAiCompatibleModel`) behind `/v1/answer`, which talks to a
+  canned model origin playing vLLM/Ollama (`POST /chat/completions` with the
+  exact wire shape `OpenAiCompatibleModel` speaks — model, temperature 0,
+  `response_format json_object`, usage accounting). Nothing mocks our own
+  types; only the model origin is canned, which is what it is in production
+  too. Properties verified end to end: a cited answer merges into the search
+  response and its provenance points into the real index; the identical
+  search is a `from_cache` hit served by the real `AnswerCache`; a model that
+  ignores grounding fails closed into a SERP-only 200 (no `answer` key).
+
 ### Added (implementation Step 20 — real index bootstrap)
 
 - **`lynx-api` serves from a sealed generation, not a hardcoded fixture**
