@@ -145,6 +145,11 @@ fail_closed         = true          # no verified citations → no answer
 service_bind        = "127.0.0.1:8180"
 answer_service      = ""            # e.g. "http://127.0.0.1:8180"
 answer_timeout_ms   = 1500
+# Trust gate for the answer context (docs/ai/astra.md § Trust gate): a page
+# whose spam score leaves less trust than this is withheld from the head the
+# answer plane may ground from. 0.0 disables the gate; a deployment that wants
+# answers only from pages with a clean spam verdict sets, e.g., 0.7.
+min_source_trust    = 0.0
 
 # ── Observability ───────────────────────────────────────────────────────────────
 [observability]

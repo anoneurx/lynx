@@ -55,6 +55,7 @@ fn seeded() -> Arc<AppState> {
         security: lynx_api::middleware::SecurityContext::disabled(),
         answer: None,
         answer_max_sources: 10,
+        answer_min_trust: 0.0,
     })
 }
 
@@ -261,6 +262,7 @@ fn state_with(doc: IndexedDocument) -> Arc<AppState> {
         security: lynx_api::middleware::SecurityContext::disabled(),
         answer: None,
         answer_max_sources: 10,
+        answer_min_trust: 0.0,
     })
 }
 
@@ -291,6 +293,7 @@ async fn negation_penalises_without_excluding() {
         security: lynx_api::middleware::SecurityContext::disabled(),
         answer: None,
         answer_max_sources: 10,
+        answer_min_trust: 0.0,
     });
 
     let (_, _, body) = get_with(state, "/api/v1/search?q=rust+-golang&explain=1").await;
@@ -332,6 +335,7 @@ async fn filetype_and_ext_filter_results() {
         security: lynx_api::middleware::SecurityContext::disabled(),
         answer: None,
         answer_max_sources: 10,
+        answer_min_trust: 0.0,
     });
     let (_, _, b1) = get_with(state.clone(), "/api/v1/search?q=rust+filetype:pdf").await;
     let v: serde_json::Value = serde_json::from_str(&b1).unwrap();

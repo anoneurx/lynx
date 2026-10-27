@@ -399,6 +399,11 @@ pub struct Ai {
     /// never fails the search: the SERP renders without it.
     #[serde(default = "default_answer_timeout_ms")]
     pub answer_timeout_ms: u64,
+    /// Trust gate for the answer context: a page whose spam score leaves less
+    /// remaining trust than this (`1.0 - spam_score`) is withheld from the head
+    /// the answer plane may ground from. `0.0` disables the gate.
+    #[serde(default)]
+    pub min_source_trust: f64,
 }
 
 impl Default for Ai {
@@ -418,6 +423,7 @@ impl Default for Ai {
             service_bind: default_ai_service_bind(),
             answer_service: String::new(),
             answer_timeout_ms: default_answer_timeout_ms(),
+            min_source_trust: 0.0,
         }
     }
 }

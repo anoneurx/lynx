@@ -25,6 +25,10 @@ pub struct AppState {
     /// How many of the ranked head the answer plane may ground from
     /// (`ai.max_sources`).
     pub answer_max_sources: usize,
+    /// Trust gate for the answer context (`ai.min_source_trust`): a candidate
+    /// whose remaining trust (`1.0 - spam_score`) is below this is withheld
+    /// from the head. `0.0` — the default — disables the gate.
+    pub answer_min_trust: f64,
 }
 
 impl std::fmt::Debug for AppState {
@@ -43,6 +47,7 @@ impl Default for AppState {
             security: SecurityContext::disabled(),
             answer: None,
             answer_max_sources: 10,
+            answer_min_trust: 0.0,
         }
     }
 }

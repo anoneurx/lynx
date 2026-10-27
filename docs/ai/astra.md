@@ -53,6 +53,20 @@ Astra is designed to run on modest infrastructure:
 | Use tool calling / function calling | No tools exist; it is a pure text-in, text-out condenser |
 | Bypass Tantivy retrieval | It only sees what ranking selected |
 
+## Trust gate
+
+The search plane owns one more defence before the answer plane ever sees a
+sentence: **the trust gate**. `ai.min_source_trust` (config knob, default `0.0`
+= off) withholds from the grounding head any page whose remaining trust
+(`1.0 - spam_score`) is below the threshold. A spammy page can still *rank* —
+ranking is relevance — but it is not handed to the model as something true.
+The gate is per-candidate, not all-or-nothing: a SERP mixing clean and spammy
+pages still answers from the clean ones, and if every candidate is below the
+gate the answer degrades to SERP-only (the normal absence contract, §
+Grounded answer in `docs/api/search.md`). This is the config-level half of the
+prompt-injection defence: the engine's sanitisation and fail-closed verifier
+hold the model honest; the gate controls what the model is *shown*.
+
 ## Testing
 
 - **Grounding tests:** A test suite of queries where the correct answer requires facts present

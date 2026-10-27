@@ -54,6 +54,7 @@ fn seeded() -> Arc<AppState> {
         security: lynx_api::middleware::SecurityContext::disabled(),
         answer: None,
         answer_max_sources: 10,
+        answer_min_trust: 0.0,
     })
 }
 

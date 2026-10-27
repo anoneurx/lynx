@@ -222,6 +222,7 @@ async fn smoke_stack(behaviour: &'static str) -> (Router, Vec<tokio::task::JoinH
         security: lynx_api::middleware::SecurityContext::disabled(),
         answer: Some(Arc::new(client)),
         answer_max_sources: 10,
+        answer_min_trust: 0.0,
     });
     (
         lynx_api::router::router(state),

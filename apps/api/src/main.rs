@@ -67,6 +67,7 @@ async fn main() {
         security: lynx_api::middleware::SecurityContext::from_env(),
         answer: answer_client.as_ref().map(|c| Arc::new(c.clone())),
         answer_max_sources: usize::try_from(ai.max_sources).unwrap_or(10),
+        answer_min_trust: ai.min_source_trust,
     });
 
     let app = lynx_api::router::router(app_state);

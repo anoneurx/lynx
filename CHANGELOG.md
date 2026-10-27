@@ -9,6 +9,18 @@ engine yet.
 
 ## [Unreleased]
 
+### Added (implementation Step 22 — trust gate for the answer context)
+
+- **`ai.min_source_trust`** (default `0.0` = off): a candidate whose remaining
+  trust (`1.0 - spam_score`) is below the threshold is withheld from the head
+  the answer plane may ground from, per-candidate — a clean SERP still answers,
+  a fully-below-gate SERP degrades to the ordinary SERP-only response. A spammy
+  page can still rank (ranking is relevance); it is just not handed to the
+  model as something true (`docs/ai/astra.md` § Trust gate). Contracts with
+  tests: the knob must stay within `[0, 1]`; an end-to-end suite films a
+  spammy page being excluded from the grounding head at gate `0.7` and
+  included at the default `0.0`.
+
 ### Added (implementation Step 21 — full-loop smoke over three real services)
 
 - **`apps/api/tests/smoke.rs`** films the whole v0.1 loop the way a

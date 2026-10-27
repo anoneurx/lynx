@@ -152,6 +152,16 @@ pub fn validate(config: &Config) -> Result<(), Vec<ValidationIssue>> {
              to keep answers off",
         ));
     }
+    // The trust gate is a spam-score threshold in [0, 1]: outside the range it
+    // can never match (too high) or is indistinguishable from 0 (negative).
+    if !config.ai.min_source_trust.is_finite() || !(0.0..=1.0).contains(&config.ai.min_source_trust)
+    {
+        issues.push(ValidationIssue::new(
+            "ai.min_source_trust",
+            "must be within [0, 1] (remaining trust 1 - spam_score must reach it); \
+             0 disables the gate",
+        ));
+    }
 
     // ── Production-only rules ───────────────────────────────────────────────────
     if prod {
@@ -493,6 +503,29 @@ mod tests {
         c.ai.service_bind = "not-an-address".into();
         let issues = validate(&c).unwrap_err();
         assert!(issues.iter().any(|i| i.field == "ai.service_bind"));
+    }
+
+    #[test]
+    fn a_trust_gate_outside_the_unit_interval_never_validates() {
+        let mut c = dev();
+        c.ai.min_source_trust = 1.5;
+        let issues = validate(&c).unwrap_err();
+        assert!(issues.iter().any(|i| i.field == "ai.min_source_trust"));
+
+        c.ai.min_source_trust = -0.1;
+        let issues = validate(&c).unwrap_err();
+        assert!(issues.iter().any(|i| i.field == "ai.min_source_trust"));
+
+        let mut ok = dev();
+        ok.ai.min_source_trust = 0.7;
+        match validate(&ok) {
+            // In-range dev config: fully valid.
+            Ok(()) => {}
+            Err(issues) => assert!(
+                !issues.iter().any(|i| i.field == "ai.min_source_trust"),
+                "an in-range gate is accepted: {issues:?}"
+            ),
+        }
     }
 
     #[test]

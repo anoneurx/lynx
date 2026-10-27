@@ -95,10 +95,21 @@ pub async fn search(
     // search plane owns ranking, the answer plane never re-retrieves. Every
     // failure mode degrades to "no answer" — the SERP is never hostage to the
     // answer plane.
+    //
+    // Trust gate (docs/ai/astra.md): a candidate whose remaining trust
+    // (`1 - spam_score`) is below `ai.min_source_trust` is withheld from the
+    // head. A spammy page can still *rank* — ranking is relevance — but it
+    // must not be handed to the model as something true. The gate is
+    // per-candidate, not all-or-nothing: with a 0.5 gate, a SERP mixing clean
+    // and spammy pages still answers from the clean ones.
     let answer = match state.answer.as_ref() {
         Some(client) if !ranked.is_empty() => {
             let head: Vec<AnswerDocHead> = ranked
                 .iter()
+                // The gate itself: remaining trust must reach the knob. Exact
+                // comparison f64 == 0.0 is the documented off switch, so a
+                // plain `>=` against a f64 knob is the intended semantics.
+                .filter(|r| 1.0 - f64::from(r.candidate.spam_score) >= state.answer_min_trust)
                 .take(state.answer_max_sources)
                 .map(|r| AnswerDocHead {
                     doc_id: r.candidate.doc_id.to_string(),
