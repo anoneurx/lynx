@@ -23,7 +23,7 @@ pub mod schema;
 pub mod secret;
 pub mod validate;
 
-pub use schema::{Config, Environment};
+pub use schema::{Ai, Config, Environment};
 pub use secret::{SecretError, SecretRef, SecretSource};
 
 /// Configuration loading and validation errors.

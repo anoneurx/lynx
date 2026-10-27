@@ -18,6 +18,7 @@ lynx-query.workspace = true
 lynx-ranker.workspace = true
 lynx-indexer.workspace = true
 lynx-suggestions.workspace = true
+reqwest.workspace = true
 tracing.workspace = true
 tokio.workspace = true
 axum.workspace = true

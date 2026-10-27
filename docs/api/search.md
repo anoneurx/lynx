@@ -53,6 +53,43 @@ two would produce two grammars with unclear precedence.
 }
 ```
 
+## Grounded answer
+
+When a deployment runs the answer plane (`ai.enabled` with `ai.answer_service`
+set), the search response may carry an `answer` object **above the results**,
+verified by [`lynx-ai`](../../services/ai/README.md) before it is ever sent:
+
+```json
+{
+  "query": { "…": "…" },
+  "answer": {
+    "text": "Ownership keeps Rust memory safe. [1]",
+    "citations": [
+      { "ordinal": 1, "url": "https://tokio.rs/big-list", "doc_id": "01JX8Q…" }
+    ],
+    "from_cache": false
+  },
+  "results": [ "…" ],
+  "meta": { "…": "…" }
+}
+```
+
+- `answer.text` — a summary in which **every sentence carries a `[n]` citation**.
+  Uncited sentences were already stripped, and if more than half the summary
+  failed verification, there is no `answer` key at all
+  ([docs/ai/astra.md](../ai/astra.md)).
+- `answer.citations` — provenance for each `[n]` marker, in first-cited order.
+- `answer.from_cache` — true when the answer plane served a cached answer.
+
+**Absence is the normal state, not an error.** There is no `answered: false`
+failure surface: a deployment without the answer plane, a refused summary, a
+timed-out call, or a plane outage all render the same SERP-only response. Caching
+is unchanged: responses are still `no-store` (page 1 included), because the
+answer rides the same fresh body as the results.
+
+The `html` format renders the answer as a cited block above the result list;
+citation markers become links to the cited document.
+
 ## Status codes
 
 | Code | Meaning |

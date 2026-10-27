@@ -53,6 +53,8 @@ fn seeded() -> Arc<AppState> {
         clock: None,
         started_at: datetime!(2026-02-18 00:00 UTC),
         security: lynx_api::middleware::SecurityContext::disabled(),
+        answer: None,
+        answer_max_sources: 10,
     })
 }
 
@@ -257,6 +259,8 @@ fn state_with(doc: IndexedDocument) -> Arc<AppState> {
         clock: None,
         started_at: datetime!(2026-02-18 00:00 UTC),
         security: lynx_api::middleware::SecurityContext::disabled(),
+        answer: None,
+        answer_max_sources: 10,
     })
 }
 
@@ -285,6 +289,8 @@ async fn negation_penalises_without_excluding() {
         clock: None,
         started_at: datetime!(2026-02-18 00:00 UTC),
         security: lynx_api::middleware::SecurityContext::disabled(),
+        answer: None,
+        answer_max_sources: 10,
     });
 
     let (_, _, body) = get_with(state, "/api/v1/search?q=rust+-golang&explain=1").await;
@@ -324,6 +330,8 @@ async fn filetype_and_ext_filter_results() {
         clock: None,
         started_at: datetime!(2026-02-18 00:00 UTC),
         security: lynx_api::middleware::SecurityContext::disabled(),
+        answer: None,
+        answer_max_sources: 10,
     });
     let (_, _, b1) = get_with(state.clone(), "/api/v1/search?q=rust+filetype:pdf").await;
     let v: serde_json::Value = serde_json::from_str(&b1).unwrap();

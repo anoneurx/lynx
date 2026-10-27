@@ -52,6 +52,8 @@ fn seeded() -> Arc<AppState> {
         clock: None,
         started_at: datetime!(2026-02-18 00:00 UTC),
         security: lynx_api::middleware::SecurityContext::disabled(),
+        answer: None,
+        answer_max_sources: 10,
     })
 }
 

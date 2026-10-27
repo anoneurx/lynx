@@ -20,6 +20,28 @@ async fn main() {
         return;
     }
 
+    // The answer plane: `ai.enabled` + a configured `ai.answer_service` dial the
+    // `lynx-ai` process. Any config problem here is a boot failure, not a
+    // per-request surprise (the same layered loader the other planes use).
+    let ai = match layered_ai_config() {
+        Ok(ai) => ai,
+        Err(error) => {
+            eprintln!("lynx-api: {error}");
+            return;
+        }
+    };
+    let answer_client = if ai.enabled && !ai.answer_service.is_empty() {
+        match lynx_api::answer::AnswerClient::new(&ai.answer_service, ai.answer_timeout_ms) {
+            Ok(client) => Some(client),
+            Err(error) => {
+                eprintln!("lynx-api: cannot build the answer client: {error}");
+                return;
+            }
+        }
+    } else {
+        None
+    };
+
     // Minimal bootstrap: create a seeded in-memory index so /search works out of the box.
     // This is a temporary fixture; in production, a Tantivy generation is loaded.
     let mut index = InMemoryIndex::new();
@@ -40,6 +62,8 @@ async fn main() {
         clock: None,
         started_at: time::OffsetDateTime::now_utc(),
         security: lynx_api::middleware::SecurityContext::from_env(),
+        answer: answer_client.as_ref().map(|c| Arc::new(c.clone())),
+        answer_max_sources: usize::try_from(ai.max_sources).unwrap_or(10),
     });
 
     let app = lynx_api::router::router(app_state);
@@ -58,4 +82,33 @@ async fn main() {
     } else {
         tracing::error!("failed to bind to {}", addr);
     }
+}
+
+/// The `[ai]` section from the layered config (`config/example.toml` under
+/// `config/$LYNX_PROFILE.toml`), validated. The answer merge is an opt-in
+/// feature of the deployment, not of code paths: with `answer_service` empty
+/// the API never dials anything.
+///
+/// # Errors
+/// Missing/unreadable config files, parse errors, or environment-validation
+/// issues, formatted for the boot log.
+fn layered_ai_config() -> Result<lynx_config::Ai, String> {
+    let base = std::fs::read_to_string("config/example.toml")
+        .map_err(|e| format!("cannot read config/example.toml: {e}"))?;
+    let profile = std::env::var("LYNX_PROFILE").unwrap_or_else(|_| "development".to_string());
+    let layer = std::fs::read_to_string(format!("config/{profile}.toml"))
+        .map_err(|e| format!("cannot read config/{profile}.toml: {e}"))?;
+    let config = lynx_config::Config::from_toml_layers(&[base.as_str(), layer.as_str()])
+        .map_err(|e| format!("invalid configuration: {e}"))?;
+    if let Err(issues) = lynx_config::validate::validate(&config) {
+        return Err(format!(
+            "configuration rejected: {}",
+            issues
+                .iter()
+                .map(|i| format!("{}: {}", i.field, i.message))
+                .collect::<Vec<_>>()
+                .join("; ")
+        ));
+    }
+    Ok(config.ai)
 }

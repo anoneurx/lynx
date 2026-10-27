@@ -245,9 +245,11 @@ async fn main() -> std::process::ExitCode {
             return std::process::ExitCode::FAILURE;
         }
     };
+    // The answer process has its own bind courtesy of `ai.service_bind`; it must
+    // never share the public API's address.
     let bind: SocketAddr = config
-        .api
-        .bind
+        .ai
+        .service_bind
         .parse()
         .unwrap_or(SocketAddr::from(([127, 0, 0, 1], 8180)));
     let app = router(AppState {

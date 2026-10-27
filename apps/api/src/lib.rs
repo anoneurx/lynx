@@ -1,5 +1,6 @@
 //! `lynx-api` library components.
 
+pub mod answer;
 pub mod errors;
 pub mod handlers;
 pub mod middleware;

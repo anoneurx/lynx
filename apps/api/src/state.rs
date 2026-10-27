@@ -7,6 +7,7 @@ use lynx_indexer::SearchIndexReader;
 use lynx_ranker::Ranker;
 use time::OffsetDateTime;
 
+use crate::answer::AnswerClient;
 use crate::middleware::SecurityContext;
 
 #[derive(Clone)]
@@ -18,6 +19,12 @@ pub struct AppState {
     pub started_at: OffsetDateTime,
     /// Rate-limiting and header settings shared by every request.
     pub security: Arc<SecurityContext>,
+    /// The answer plane ('lynx-ai'), when this deployment merges answers into
+    /// responses. `None` — the default — renders the SERP only and dials nobody.
+    pub answer: Option<Arc<AnswerClient>>,
+    /// How many of the ranked head the answer plane may ground from
+    /// (`ai.max_sources`).
+    pub answer_max_sources: usize,
 }
 
 impl std::fmt::Debug for AppState {
@@ -34,6 +41,8 @@ impl Default for AppState {
             clock: None,
             started_at: OffsetDateTime::now_utc(),
             security: SecurityContext::disabled(),
+            answer: None,
+            answer_max_sources: 10,
         }
     }
 }

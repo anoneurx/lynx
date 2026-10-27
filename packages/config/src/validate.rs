@@ -123,10 +123,34 @@ pub fn validate(config: &Config) -> Result<(), Vec<ValidationIssue>> {
         if !config.ai.fail_closed {
             issues.push(ValidationIssue::new(
                 "ai.fail_closed",
-                "fail-closed (no verified citations → no answer) is a \\
+                "fail-closed (no verified citations → no answer) is a \
                  non-negotiable contract of the answer layer (docs/ai/astra.md)",
             ));
         }
+        if config
+            .ai
+            .service_bind
+            .parse::<std::net::SocketAddr>()
+            .is_err()
+        {
+            issues.push(ValidationIssue::new(
+                "ai.service_bind",
+                "must be a socket address like 127.0.0.1:8180 (the answer process binds this)",
+            ));
+        }
+    }
+
+    // The public API dials the answer plane when configured; a malformed dial
+    // address must fail at boot, not on the first search.
+    if !config.ai.answer_service.is_empty()
+        && !config.ai.answer_service.starts_with("http://")
+        && !config.ai.answer_service.starts_with("https://")
+    {
+        issues.push(ValidationIssue::new(
+            "ai.answer_service",
+            "must be an http(s) base URL like https://ai.internal:8443/, or empty \
+             to keep answers off",
+        ));
     }
 
     // ── Production-only rules ───────────────────────────────────────────────────
@@ -181,6 +205,17 @@ pub fn validate(config: &Config) -> Result<(), Vec<ValidationIssue>> {
                     "ai.endpoint",
                     "ai endpoint must be https in production: the queries and \
                      source snippets it carries are corpus-grade content",
+                ));
+            }
+            // The same rule for the search plane dialing the answer plane: the
+            // request carries the active query, which is corpus-grade content.
+            if !config.ai.answer_service.is_empty()
+                && !config.ai.answer_service.starts_with("https://")
+            {
+                issues.push(ValidationIssue::new(
+                    "ai.answer_service",
+                    "answer_service must be https in production: the request \
+                     carries the active query text",
                 ));
             }
         }
@@ -394,6 +429,55 @@ mod tests {
         c.ai.provider = "none".into();
         let issues = validate(&c).unwrap_err();
         assert!(issues.iter().any(|i| i.field == "ai.provider"));
+    }
+
+    #[test]
+    fn a_malformed_answer_service_never_validates() {
+        let mut c = dev();
+        c.ai.answer_service = "127.0.0.1:8180".into(); // missing scheme
+        let issues = validate(&c).unwrap_err();
+        assert!(issues.iter().any(|i| i.field == "ai.answer_service"));
+
+        let mut ok = c;
+        ok.ai.answer_service = "http://127.0.0.1:8180".into();
+        assert!(
+            validate(&ok).is_ok(),
+            "a well-formed dev dial address is accepted: {:?}",
+            validate(&ok)
+        );
+    }
+
+    #[test]
+    fn production_dials_the_answer_plane_over_https_only() {
+        let mut c = dev();
+        c.core.environment = Environment::Production;
+        c.core.instance_id = "prod-1".into();
+        c.ai.enabled = true;
+        c.ai.provider = "openai-compatible".into();
+        c.ai.model = "m-1".into();
+        c.ai.endpoint = "https://ai-internal:8443/v1".into();
+        c.ai.answer_service = "http://ai-internal:8180".into();
+        let issues = validate(&c).unwrap_err();
+        assert!(issues.iter().any(|i| i.field == "ai.answer_service"));
+
+        let mut ok = c;
+        ok.ai.answer_service = "https://ai-internal:8443".into();
+        let faults = validate(&ok).unwrap_err();
+        assert!(
+            !faults.iter().any(|i| i.field == "ai.answer_service"),
+            "https dial address is accepted in production: {faults:?}"
+        );
+    }
+
+    #[test]
+    fn an_enabled_answer_plane_needs_a_parsable_bind() {
+        let mut c = dev();
+        c.ai.enabled = true;
+        c.ai.provider = "openai-compatible".into();
+        c.ai.model = "m-1".into();
+        c.ai.service_bind = "not-an-address".into();
+        let issues = validate(&c).unwrap_err();
+        assert!(issues.iter().any(|i| i.field == "ai.service_bind"));
     }
 
     #[test]

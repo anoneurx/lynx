@@ -13,6 +13,7 @@ use lynx_common::time::Clock;
 use lynx_indexer::SuggestionKind;
 use lynx_ranker::RankedResult;
 
+use crate::answer::AnswerDocHead;
 use crate::errors::ApiErrorKind;
 use crate::models::{
     decode_cursor, encode_cursor, SearchQuery, SearchResponse, StatusResponse, MAX_OFFSET,
@@ -90,7 +91,28 @@ pub async fn search(
     };
     let has_more = next_cursor.is_some();
 
-    let resp = SearchResponse::from_ranked(
+    // The answer plane grounds from the ranked head, SERP order (§Q): the
+    // search plane owns ranking, the answer plane never re-retrieves. Every
+    // failure mode degrades to "no answer" — the SERP is never hostage to the
+    // answer plane.
+    let answer = match state.answer.as_ref() {
+        Some(client) if !ranked.is_empty() => {
+            let head: Vec<AnswerDocHead> = ranked
+                .iter()
+                .take(state.answer_max_sources)
+                .map(|r| AnswerDocHead {
+                    doc_id: r.candidate.doc_id.to_string(),
+                    url: r.candidate.url.clone(),
+                    title: r.candidate.title.clone(),
+                    text: r.candidate.body.clone(),
+                })
+                .collect();
+            client.answer(&params.q, &head).await
+        }
+        _ => None,
+    };
+
+    let mut resp = SearchResponse::from_ranked(
         &plan,
         params.explain,
         page,
@@ -99,6 +121,7 @@ pub async fn search(
         start.elapsed().as_millis().try_into().unwrap_or(u64::MAX),
         next_cursor,
     );
+    resp.answer = answer;
 
     let format = params.format.to_ascii_lowercase();
     if format == "html" {

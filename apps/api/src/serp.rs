@@ -26,6 +26,7 @@ pub fn render_html(
     head(&mut h, q);
     body_start(&mut h, q);
     notices(&mut h, resp);
+    answer_block(&mut h, resp);
     results(&mut h, resp);
     pagination(&mut h, q, offset, page_size, resp.results.len(), has_more);
     operators_help(&mut h);
@@ -61,6 +62,89 @@ fn body_start(h: &mut String, q: &str) {
     h.push_str("<input type=\"hidden\" name=\"format\" value=\"html\">");
     h.push_str("<button type=\"submit\">Search</button>");
     h.push_str("</form></header>");
+}
+
+/// The grounded answer block, above the result list so it reads like an answer,
+/// not a result (docs/api/search.md § Grounded answer). Citations are links to
+/// the cited document; every sentence in the answer text already carries its
+/// `[n]` marker, which the answer plane verified.
+/// The grounded answer block, above the result list so it reads like an answer,
+/// not a result (docs/api/search.md § Grounded answer). Citations are links to
+/// the cited document; every sentence in the answer text already carries its
+/// `[n]` marker, which the answer plane verified.
+fn answer_block(h: &mut String, page: &SearchResponse) {
+    let Some(block) = page.answer.as_ref() else {
+        return;
+    };
+    h.push_str("<section class=\"answer\" aria-label=\"Grounded answer\">");
+    h.push_str("<p class=\"answer-text\">");
+    // Respan the `[n]` markers into links: the verifier guarantees every
+    // remaining `[n]` refers to a listed citation, so a citation number with no
+    // matching entry would be impossible — but split is used span-constructively
+    // and any leftover bracket is escaped as text, so nothing can inject here.
+    let mut rest = block.text.as_str();
+    while let Some(pos) = rest.find('[') {
+        h.push_str(&escape(&rest[..pos]));
+        rest = &rest[pos..];
+        // A `[n]` marker must be resolvable to a listed citation, else render it
+        // as inert text and step past the bracket so the scan always advances.
+        let (close, advance) = match rest.find(']') {
+            Some(c) => (c + 1, c + 1),
+            None => (0, 1),
+        };
+        let marker = &rest[..close];
+        let ordinal: Option<usize> = marker
+            .trim_start_matches('[')
+            .trim_end_matches(']')
+            .trim()
+            .parse()
+            .ok();
+        let citation = match ordinal {
+            Some(n) => block.citations.iter().find(|c| c.ordinal == n),
+            None => None,
+        };
+        if let Some(citation) = citation {
+            if citation.url.starts_with("https://") || citation.url.starts_with("http://") {
+                let _ = write!(
+                    h,
+                    "<a class=\"answer-cite\" href=\"{}\" rel=\"noreferrer noopener\">{}</a>",
+                    escape(&citation.url),
+                    escape(marker)
+                );
+            } else {
+                h.push_str(&escape(marker));
+            }
+        } else {
+            h.push_str(&escape(marker));
+        }
+        rest = &rest[advance.min(rest.len())..];
+    }
+    if !rest.is_empty() {
+        h.push_str(&escape(rest));
+    }
+    h.push_str("</p>");
+    h.push_str("<ul class=\"answer-sources\">");
+    for c in &block.citations {
+        let linkable = c.url.starts_with("https://") || c.url.starts_with("http://");
+        h.push_str("<li>");
+        if linkable {
+            let _ = write!(
+                h,
+                "<sup>[{}]</sup> <a href=\"{}\" rel=\"noreferrer noopener\">{}</a>",
+                c.ordinal,
+                escape(&c.url),
+                escape(&c.doc_id)
+            );
+        } else {
+            h.push_str(&escape(&format!("[{}] {}", c.ordinal, c.doc_id)));
+        }
+        h.push_str("</li>");
+    }
+    h.push_str("</ul>");
+    if block.from_cache {
+        h.push_str("<p class=\"answer-meta\">Answer served from cache.</p>");
+    }
+    h.push_str("</section>");
 }
 
 fn notices(h: &mut String, resp: &SearchResponse) {

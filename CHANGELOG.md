@@ -9,6 +9,32 @@ engine yet.
 
 ## [Unreleased]
 
+### Added (implementation Step 19 — the search plane dials the answer plane)
+
+- **`GET /api/v1/search` merges verified answers** when the deployment opts in:
+  config gained `ai.service_bind` (what the `lynx-ai` process binds — it no
+  longer shares the public API's `api.bind` address), `ai.answer_service`
+  (what the public API dials; empty keeps answers off) and
+  `ai.answer_timeout_ms` (per-request deadline). The search handler grounds
+  from the ranked head (`ai.max_sources` docs) and attaches a
+  `SearchResponse.answer` block — verified text plus citation provenance —
+  only when the answer plane produced one (`docs/api/search.md` § Grounded
+  answer). **The SERP is never hostage to the answer plane**: transport
+  failures, timeouts, malformed bodies, and typed refusals all degrade to the
+  ordinary SERP within the deadline, and the HTML representation renders the
+  answer as a cited block above the results (citation markers become links
+  there; markers that resolve to no citation render as inert text, never
+  injection).
+- **Config contracts extended** (`lynx-config` validation, with tests): a
+  malformed `ai.answer_service` (no http(s) scheme) never validates in any
+  environment; production requires `https` for the dial address (it carries
+  the active query text) and a parsable `ai.service_bind` when the answer
+  plane is enabled.
+- Fail-closed-by-construction in the client: `AnswerClient::answer` returns
+  `Option` — `None` for every failure and refusal — and its unit suite +
+  the end-to-end suite (`apps/api/tests/answer.rs`) film an answered call, a
+  refusal, a dead endpoint, and a route that times out under the deadline.
+
 ### Added (implementation Step 18 — the Astra answer layer, optional by default)
 
 - **`lynx-ai` crate end-to-end** (§Z Step 18; off by default and irrelevant to any

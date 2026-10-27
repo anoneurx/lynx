@@ -1291,6 +1291,7 @@ dependencies = [
  "lynx-security",
  "lynx-suggestions",
  "rand 0.8.8",
+ "reqwest",
  "serde",
  "serde_json",
  "thiserror 1.0.69",

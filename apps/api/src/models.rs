@@ -211,6 +211,12 @@ pub struct SearchResponse {
     pub query: QueryInfo,
     pub results: Vec<SearchResult>,
     pub meta: SearchMeta,
+    /// The grounded answer, when this deployment has an answer plane and it
+    /// verified one for the head of these results (`docs/api/search.md` §
+    /// Grounded answer). Absent otherwise: absent does NOT mean refused —
+    /// cover, budget, and refusals all look identical to clients, by design.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub answer: Option<crate::answer::AnswerBlock>,
 }
 
 impl SearchResponse {
@@ -278,6 +284,7 @@ impl SearchResponse {
         SearchResponse {
             query: query_info,
             results,
+            answer: None,
             meta: SearchMeta {
                 total,
                 returned,

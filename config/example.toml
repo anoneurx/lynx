@@ -138,6 +138,14 @@ daily_token_budget  = 2000000
 require_citations   = true
 fail_closed         = true          # no verified citations → no answer
 
+# The answer-plane process. The lynx-ai binary binds `service_bind`; the public
+# API merges answers when `answer_service` is set and dials it per request.
+# With `answer_service = ""` the API renders the SERP only and never contacts
+# the answer plane — answers are an opt-in deployment feature.
+service_bind        = "127.0.0.1:8180"
+answer_service      = ""            # e.g. "http://127.0.0.1:8180"
+answer_timeout_ms   = 1500
+
 # ── Observability ───────────────────────────────────────────────────────────────
 [observability]
 metrics_bind   = "0.0.0.0:9090"

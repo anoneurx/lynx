@@ -385,6 +385,20 @@ pub struct Ai {
     pub require_citations: bool,
     /// Whether to fail closed when citations cannot be verified.
     pub fail_closed: bool,
+    /// Where the answer-plane process listens. The lynx-ai binary binds this; the
+    /// public API dials it through `answer_service`. Two views of one process:
+    /// the bind is local, the dial address may go through a service DNS name.
+    #[serde(default = "default_ai_service_bind")]
+    pub service_bind: String,
+    /// The public API's view of the answer plane (scheme + host + port, e.g.
+    /// `http://127.0.0.1:8180`). Empty disables query→answer merging in the API:
+    /// SERP only, and the answer plane is not contacted.
+    #[serde(default)]
+    pub answer_service: String,
+    /// Per-request timeout for the answer call, in milliseconds. A timed-out answer
+    /// never fails the search: the SERP renders without it.
+    #[serde(default = "default_answer_timeout_ms")]
+    pub answer_timeout_ms: u64,
 }
 
 impl Default for Ai {
@@ -401,8 +415,19 @@ impl Default for Ai {
             daily_token_budget: 2_000_000,
             require_citations: true,
             fail_closed: true,
+            service_bind: default_ai_service_bind(),
+            answer_service: String::new(),
+            answer_timeout_ms: default_answer_timeout_ms(),
         }
     }
+}
+
+fn default_ai_service_bind() -> String {
+    "127.0.0.1:8180".to_string()
+}
+
+fn default_answer_timeout_ms() -> u64 {
+    1500
 }
 
 /// Observability settings.
