@@ -90,6 +90,20 @@ answer rides the same fresh body as the results.
 The `html` format renders the answer as a cited block above the result list;
 citation markers become links to the cited document.
 
+## Ranking transparency
+
+`explain=true` adds a `signals` object to every result, in **both** formats:
+lexical relevance, freshness, quality, authority, query context, spam score, and
+any applied penalties, plus `score` and the `meta.ranking_config_version` they
+were computed under. In `html` it renders as a per-result **"Why this ranking?"**
+disclosure (`<details>`) — the same numbers, made legible to a human — with the
+explicit statement that every field comes from the document's stored signals,
+never from the searcher. This is deliberate: per-request ranking transparency is
+not an industry feature; here it is part of the explainability principle.
+(Dense operator-side deep explains (retrieval, shard, cluster, spam coverage)
+remain operator-token gated: `GET /api/v1/explain` per
+[explain.md](./explain.md).)
+
 ## Status codes
 
 | Code | Meaning |

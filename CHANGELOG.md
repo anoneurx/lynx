@@ -18,6 +18,25 @@ The first end-to-end version: crawl → index → search → SERP, with everythi
 checks), plus the optional-by-default Astra answer layer behind a kill switch,
 token budget, circuit breaker, and fail-closed citation verification.
 
+### Added — differentiation against the landscape (the gaps others leave open)
+
+- **Per-request ranking transparency in the SERP** (`apps/api/src/serp.rs`,
+  `docs/api/search.md` § Ranking transparency): no mainstream engine lets a user
+  see why one result ranked above another — ranking opacity is structural
+  (Google/Bing opaque; privacy alternatives mostly rent their organic links
+  from Bing/Google syndication, e.g. DDG/Startpage/Ecosia/Qwant; only Brave and
+  Mojeek really index). `explain=true` now surfaces the full per-result signal
+  vector (lexical, freshness, quality, authority, context, spam, penalties)
+  **in the HTML representation as a per-result "Why this ranking?" disclosure**
+  with the ranking-config version and the statement that nothing about the
+  searcher is used. JSON already carried the vector; the HTML view makes it
+  human-legible, and it is opt-in — the default SERP stays compact.
+- Installation-sized note in the README ("What makes LYNX different"): the
+  three structural gaps — rented result lists, unverified AI citations
+  (CJR Tow Center 2025: all eight AI search evaluations found citation
+  problems; hallucinated citations rising), and ranking opacity — and what
+  LYNX does for each, with honest v0.1 limits stated next to the claims.
+
 ### Added (implementation Step 22 — trust gate for the answer context)
 
 - **`ai.min_source_trust`** (default `0.0` = off): a candidate whose remaining

@@ -27,6 +27,21 @@ allowed to index, and serves results without building a profile of who asked wha
 > scale, sharding, multi-region — live in [ROADMAP.md](./ROADMAP.md) and are not
 > claimed as done.
 
+## What makes LYNX different
+
+Three structural gaps are visible in today's landscape, and LYNX is built around
+closing them rather than out-texting another SERP:
+
+| Gap in existing engines | LYNX's answer |
+| --- | --- |
+| **The result list itself is rented.** Nearly every privacy-oriented or general alternative gets its organic web links from someone else's index — Bing or Google syndication (DuckDuckGo, Startpage, Ecosia, Qwant et al. are documented dependents), with Mojeek and Brave the notable independents. Your privacy can be respected upstream while the ranking you see is still produced by the company you left. | **A fully owned pipeline**: LYNX crawls under `robots.txt`, builds its own index generation, ranks with its own versioned BM25F design, and serves — no syndication contract anywhere in the loop. |
+| **AI answers bloom where you can't verify them.** Independent reviews (e.g. the CJR Tow Center, 2025: all eight AI search tools tested had citation problems — for some, the majority of citations led to fabricated or broken URLs) keep finding confident answers with invented provenance, and a citation design *increases* user trust even when it is wrong. | **Fail-closed answers**: the Astra answer layer strips every sentence not carrying a verified citation, refuses rather than guesses (`killed`, `budget_exhausted`, …), and withholds below-trust pages from grounding entirely (`ai.min_source_trust`). A deployment with no answer plane renders the plain SERP — absence is honest, never invented. v0.1 verification is sentence-level and content-blind (documented in `docs/ai/astra.md`), which bounds the blast radius; it does not yet prove truth. |
+| **Ranking is opaque by design.** Nobody can see, for a single request, why one page ranked above another. | **Ranking transparency is a product feature, not a press release**: `explain=true` returns the full per-result signal vector (lexical, freshness, quality, authority, context, spam, penalties) in both representations — the HTML SERP renders a per-result "Why this ranking?" disclosure with the same numbers and the ranking-config version. |
+
+What LYNX does **not** claim: the corpus is v0.1-scale small (the crawler, not a
+data centre, is the constraint), and Phase 6 scale work is future work with exit
+criteria in [ROADMAP.md](./ROADMAP.md).
+
 ## Design principles
 
 | # | Principle | Consequence in the code |

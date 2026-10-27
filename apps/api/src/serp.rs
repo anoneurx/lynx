@@ -5,7 +5,7 @@
 //! the title, `aria-live` on the result count and notices, keyboard-usable controls, and
 //! `prefers-color-scheme` / `prefers-contrast` theming.
 
-use crate::models::SearchResponse;
+use crate::models::{SearchResponse, SearchResult};
 use std::fmt::Write as _;
 
 /// Render the SERP for `resp`, echoing the user's `q` back into the search box.
@@ -204,9 +204,51 @@ fn results(h: &mut String, resp: &SearchResponse) {
         h.push_str("<p class=\"snippet\">");
         h.push_str(&escape(&r.snippet));
         h.push_str("</p>");
+        explain_result(h, r, &resp.meta.ranking_config_version);
         h.push_str("</li>");
     }
     h.push_str("</ol>");
+}
+
+/// Per-result ranking explanation (docs/api/explain.md), rendered as a
+/// collapsed `<details>` when `explain=true` puts the signal vector in the
+/// response. This is a deliberate differentiator: no mainstream search engine
+/// lets a user see, per request, why one result ranked above another. The
+/// numbers are the same ones the JSON API returns; the HTML view just makes
+/// them legible.
+fn explain_result(h: &mut String, r: &SearchResult, ranking_version: &str) {
+    let Some(v) = r.signals.as_ref() else {
+        return;
+    };
+    h.push_str("<details class=\"result-explain\"><summary>Why this ranking?</summary>");
+    h.push_str("<dl class=\"explain\">");
+    let _ = write!(h, "<dt>final score</dt><dd>{:.4}</dd>", r.score);
+    let _ = write!(h, "<dt>lexical relevance</dt><dd>{:.4}</dd>", v.lexical);
+    let _ = write!(h, "<dt>freshness</dt><dd>{:.4}</dd>", v.freshness);
+    let _ = write!(h, "<dt>quality</dt><dd>{:.4}</dd>", v.quality);
+    let _ = write!(h, "<dt>authority</dt><dd>{:.4}</dd>", v.authority);
+    let _ = write!(h, "<dt>query context</dt><dd>{:.4}</dd>", v.context);
+    let _ = write!(
+        h,
+        "<dt>spam score</dt><dd>{:.4} (lower is safer)</dd>",
+        v.spam
+    );
+    if v.negation_penalty < 1.0 {
+        let _ = write!(
+            h,
+            "<dt>negation penalty</dt><dd>×{:.4}</dd>",
+            v.negation_penalty
+        );
+    }
+    h.push_str("</dl>");
+    let _ = write!(
+        h,
+        "<p class=\"explain-meta\">Weights and formula: ranking config \"{}\". \
+         Every field is computed at query time from the document's stored \
+         signals — nothing about the searcher is used.</p>",
+        escape(ranking_version)
+    );
+    h.push_str("</details>");
 }
 
 fn pagination(
@@ -323,6 +365,10 @@ const STYLE: &str = concat!(
     ".title{font-size:1.15rem;margin:0 0 .15rem;font-weight:600}",
     ".url{color:var(--muted);font-size:.85rem;margin:.1rem 0;overflow-wrap:anywhere}",
     ".snippet{margin:.25rem 0 0}",
+    ".result-explain{margin-top:.5rem}.result-explain summary{cursor:pointer;color:var(--muted);font-size:.85rem}",
+    ".explain{margin:.5rem 0 0;display:grid;grid-template-columns:auto 1fr;gap:.15rem 1rem;font-size:.85rem}",
+    ".explain dt{color:var(--muted)}.explain dd{margin:0;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}",
+    ".explain-meta{color:var(--muted);font-size:.8rem;margin-top:.5rem}",
     ".pagination{display:flex;gap:1rem;margin:1.5rem 0}",
     ".operators{margin-top:2rem;color:var(--muted)}",
     ".operators dt{margin-top:.5rem;color:var(--fg)}.operators dd{margin:.1rem 0 0 1rem}",

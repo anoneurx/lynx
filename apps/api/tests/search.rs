@@ -522,6 +522,39 @@ async fn explain_defaults_off_and_opt_in_includes_signals() {
     assert!(v["results"][0]["signals"].is_object());
 }
 
+/// Ranking transparency in the HTML representation: a deliberate
+/// differentiator (no mainstream engine lets a user see, per request, why a
+/// result ranked above another). `explain=true` renders a per-result
+/// "Why this ranking?" disclosure with the same signal vector the JSON API
+/// returns; without it the results are the ordinary, compact list.
+#[tokio::test]
+async fn html_explain_renders_a_why_this_ranking_disclosure_per_result() {
+    let (_, _, html) = get("/api/v1/search?q=rust&format=html").await;
+    assert!(
+        !html.contains("<details class=\"result-explain\">"),
+        "the default SERP stays compact: explanation is opt-in"
+    );
+
+    let (_, _, html) = get("/api/v1/search?q=rust&format=html&explain=1").await;
+    let details = html.matches("<details class=\"result-explain\">").count();
+    assert!(details >= 1, "each result carries the disclosure: {html}");
+    let count_summaries = html.matches("<summary>Why this ranking?</summary>").count();
+    assert_eq!(
+        details, count_summaries,
+        "the disclosure and its summary appear once per explained result"
+    );
+    // The visible numbers are the signal vector, and the version travels with it.
+    assert!(html.contains("lexical relevance"), "{html}");
+    assert!(html.contains("spam score"), "{html}");
+    assert!(html.contains("ranking config"), "{html}");
+    assert!(
+        html.contains("nothing about the searcher is used"),
+        "the privacy claim is part of the explanation: {html}"
+    );
+    // Bleeding is impossible: scores render as text, never markup.
+    assert!(!html.contains("onclick"), "{html}");
+}
+
 #[tokio::test]
 async fn malformed_parameters_fall_back_to_defaults() {
     // count=abc and non-UTF-8 bytes must not produce a 500 or a plain-text 400.

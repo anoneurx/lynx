@@ -2,6 +2,10 @@
 
 Why is this ranked here. Operator-only in v0.1, because `verbose=true` can include query terms.
 
+The *user-facing* ranking explanation — per-result signals, inline in the SERP —
+lives on `/api/v1/search` with `explain=true` (`docs/api/search.md` § Ranking
+transparency). This endpoint is the deep, operator/debug surface.
+
 ## Request
 
 ```bash
