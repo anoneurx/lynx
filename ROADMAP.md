@@ -5,12 +5,15 @@ must be true to move on.
 
 ## Current state
 
-**Phase 0 in progress.** Architecture, threat model, data model, ADRs, configuration,
-repository structure, CI, and evaluation plan are written. No production code yet.
-See [docs/architecture/specification.md](./docs/architecture/specification.md) for the
-full design and §Z for the implementation order.
+**v0.1.0 shipped (2026-10-27).** The §Z implementation order — architecture through
+the Astra answer layer — is complete: each step committed with its tests, the full
+gate (fmt, clippy, tests, link + privacy checks) green at every commit. See
+[CHANGELOG.md](./CHANGELOG.md) for the per-step record and
+[docs/architecture/specification.md](./docs/architecture/specification.md) §Z for
+the order itself. What follows (Phase 6) is scale work; the phase definitions below
+stay as written.
 
-## Phase 0 — Architecture *(current)*
+## Phase 0 — Architecture *(done)*
 
 | Deliverable | Status |
 | ----------- | ------ |

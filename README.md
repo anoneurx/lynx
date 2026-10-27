@@ -6,7 +6,7 @@
 
 `fast discovery · no tracking · open infrastructure`
 
-[![status](https://img.shields.io/badge/status-architecture%20phase-informational)](#)
+[![status](https://img.shields.io/badge/status-v0.1.0-informational)](./CHANGELOG.md)
 [![license](https://img.shields.io/badge/license-AGPL--3.0%20OR%20commercial-blueviolet)](./LICENSE)
 [![docs](https://img.shields.io/badge/docs-design--stage-yellow)](./docs/architecture.md)
 
@@ -20,9 +20,12 @@ LYNX is a search engine built the way we would want one built: fast, inspectable
 hostile to surveillance. It crawls the public web under `robots.txt`, indexes what it is
 allowed to index, and serves results without building a profile of who asked what.
 
-> **Design phase.** This repository currently contains the complete architecture,
-> threat model, data model, and engineering plan for LYNX. There is no running search
-> engine here yet. Production code is written against these documents, not before them.
+> **v0.1.0.** The §Z implementation order is complete end to end: crawler, parser,
+> indexer, query processor, BM25F ranker, public API with SERP, Postgres storage,
+> politeness and safety gates, observability, and the optional Astra answer layer.
+> Every step is test-gated; see [CHANGELOG.md](./CHANGELOG.md). Plans beyond v0.1 —
+> scale, sharding, multi-region — live in [ROADMAP.md](./ROADMAP.md) and are not
+> claimed as done.
 
 ## Design principles
 

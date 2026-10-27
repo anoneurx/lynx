@@ -4,10 +4,19 @@ All notable changes to LYNX. Format based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-This project is in its **design phase**. No released version contains a running search
-engine yet.
+v0.1.0 is the release of the §Z implementation order end to end: a real crawl-index-
+search loop with no third-party requests and optional, off-by-default Astra answers.
+Later phases ([ROADMAP.md](./ROADMAP.md)) — scale, sharding, multi-region — are
+post-v0.1 by design.
 
 ## [Unreleased]
+
+## [0.1.0] — 2026-10-27
+
+The first end-to-end version: crawl → index → search → SERP, with everything each
+§Z step promised in commits shipped and gated (fmt, clippy, tests, link + privacy
+checks), plus the optional-by-default Astra answer layer behind a kill switch,
+token budget, circuit breaker, and fail-closed citation verification.
 
 ### Added (implementation Step 22 — trust gate for the answer context)
 
