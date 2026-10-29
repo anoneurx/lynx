@@ -8,7 +8,7 @@
 
 [![status](https://img.shields.io/badge/status-v0.1.0-informational)](./CHANGELOG.md)
 [![license](https://img.shields.io/badge/license-AGPL--3.0%20OR%20commercial-blueviolet)](./LICENSE)
-[![docs](https://img.shields.io/badge/docs-design--stage-yellow)](./docs/architecture.md)
+[![docs](https://img.shields.io/badge/docs-v0.1.0-informational)](./docs/architecture.md)
 
 </div>
 
@@ -108,15 +108,22 @@ query data, and we document every place we store something.
 
 ## Status
 
+The §Z order referenced above is the component-by-component build sequence from
+[docs/architecture/specification.md §Z](./docs/architecture/specification.md#z-recommended-v01-implementation-order);
+the phases below are the delivery milestones from [ROADMAP.md](./ROADMAP.md) and
+[docs/timeline.md](./docs/timeline.md). Every §Z step shipped in v0.1.0, but a phase is
+marked done only when its exit criteria are met — the rest show as partial, with the
+reason.
+
 | Phase | State |
 | ----- | ----- |
-| Phase 0 — Architecture & planning | **in progress** |
-| Phase 1 — Search prototype | not started |
-| Phase 2 — Crawler | not started |
-| Phase 3 — Real search engine | not started |
-| Phase 4 — Privacy hardening | not started |
-| Phase 5 — Astra (AI answers) | not started |
-| Phase 6 — Scale & distribution | not started |
+| Phase 0 — Architecture | **done (v0.1.0)** |
+| Phase 1 — Search prototype | **partial** — query processor, both index readers, BM25F ranker, search API, server-rendered SERP, and CI quality gates shipped; spell correction/expansion and the `apps/web` SPA are not in v0.1 |
+| Phase 2 — Crawler | **done (v0.1.0)** — frontier, robots, SSRF safety gate, downloader caps, parser, and politeness, all test-gated against the fixture origin |
+| Phase 3 — Real search engine | **partial** — full operator set, near-duplicate fingerprints, freshness, suggestions, and duplicate/spam quality gates shipped; link-graph authority is deliberately post-v0.1 and the corpus is v0.1-scale small |
+| Phase 4 — Privacy hardening | **partial** — GPC, no-store, retention jobs, and production config checks shipped with tests; external review and a production exercise of the privacy model are still open |
+| Phase 5 — AI (Astra) | **partial** — the optional answer layer shipped fail-closed behind a kill switch; v0.1 citation verification is sentence-level and content-blind (documented in [docs/ai/astra.md](./docs/ai/astra.md)) |
+| Phase 6 — Scale | **planned** — sharding, multi-region, and DR drills have exit criteria in [ROADMAP.md](./ROADMAP.md) and are future work |
 
 ## Contributing
 
