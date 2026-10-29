@@ -85,9 +85,14 @@ gantt
 
 ## Current position
 
-**Phase 0 — in progress.** Design documents, threat model, data model, ADRs, configuration,
-repository scaffold, and CI are written. No production code yet. Next: accept ADRs and begin
-Phase 1 (search prototype).
+**v0.1.0 shipped (2026-10-27).** The §Z implementation order in
+[docs/architecture/specification.md](./architecture/specification.md#z-recommended-v01-implementation-order)
+is complete end to end — every step committed with its tests. In phase terms: Phases 0
+and 2 are done; Phases 1, 3, 4, and 5 are partial, with their open exit criteria (spell
+correction and the web SPA; link-graph authority and corpus coverage; external privacy
+review and a production exercise; content-blind citation verification) tracked in
+[ROADMAP.md](../ROADMAP.md) and summarised in the [README status table](../README.md#status).
+Phase 6 has not started. See [CHANGELOG.md](../CHANGELOG.md) for the per-step record.
 
 ## Dependency notes
 

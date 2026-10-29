@@ -473,13 +473,23 @@ token budget, circuit breaker, and fail-closed citation verification.
 
 ### Security
 
-- No code to secure yet. The controls designed here (SSRF gate, privacy layer, secret
-  handling, supply chain, admin isolation, prompt-injection boundaries) are specified and
-  each maps to a numbered threat and a planned test.
+- The controls designed here are implemented, tested, and gated in this release: the
+  layered SSRF defence (schemes, ports, blocked CIDRs in every encoding, per-hop
+  redirect validation, DNS pinning — `services/crawler/tests/safety_gate.rs`), the
+  privacy layer (rate limiting, GPC, `no-store`, query redaction), secret references
+  only in configuration, and the prompt-injection boundaries in the Astra layer
+  (`services/ai/tests/injection.rs`). Each maps to a numbered threat in the threat
+  model.
 
 ### Known limitations
 
-- No running service. No index. No crawler.
-- Performance figures are targets, not measurements. They are labelled as targets
-  everywhere they appear.
+- The index is v0.1-scale small: the crawler, not a data centre, is the constraint.
+  Coverage will be worse than commercial engines for years.
+- Performance figures in the docs are targets unless labelled as measured; the measured
+  figures in this changelog come from the in-repo fixture corpus, not the live index.
+- Astra v0.1 citation verification is sentence-level and content-blind — it bounds
+  blast radius, it does not prove truth (`docs/ai/astra.md` § v0.1 implementation
+  scope).
+- Link-graph authority, sharding, and multi-region are post-v0.1 by design; their exit
+  criteria live in [ROADMAP.md](./ROADMAP.md).
 - Open technical questions are listed in the specification rather than papered over.

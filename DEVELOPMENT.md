@@ -3,9 +3,12 @@
 How to run LYNX locally. Architecture first: [docs/architecture.md](./docs/architecture.md).
 Deployment: [DEPLOYMENT.md](./DEPLOYMENT.md).
 
-> This repository is currently at the **design stage**. The structure, tooling, configs,
-> and CI exist; the services themselves are being implemented against
-> [docs/architecture/specification.md §Z](./docs/architecture/specification.md#z-recommended-v01-implementation-order).
+> This repository is at **v0.1.0**. The services described here are implemented against
+> [docs/architecture/specification.md §Z](./docs/architecture/specification.md#z-recommended-v01-implementation-order)
+> and test-gated; per-phase status (including what is deliberately not in v0.1) is in the
+> [README status table](./README.md#status) and [CHANGELOG.md](./CHANGELOG.md). Some
+> directory READMEs still describe the full design — components marked design-only there
+> (e.g. `apps/web`) are not implemented in v0.1.
 
 ## Prerequisites
 

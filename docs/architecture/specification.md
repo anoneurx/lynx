@@ -3,7 +3,8 @@
 > The complete, self-contained architecture for LYNX. Section order follows the project
 > brief. This document is the reference; everything else is a detail view of it.
 >
-> **Status:** design stage. Last reviewed 2026-02-18. Owner: Anoneurx engineering.
+> **Status:** implemented in v0.1.0 (§Z below); this document remains the design
+> reference. Last reviewed 2026-02-18. Owner: Anoneurx engineering.
 > Companion documents: [architecture.md](../architecture.md) (summary),
 > [threat-model.md](../threat-model.md), [PRIVACY.md](../../PRIVACY.md).
 
