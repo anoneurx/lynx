@@ -4,6 +4,13 @@ Unit tests live next to the code they test (Rust convention, so they can use pri
 internals). This directory is for suites that **span** crates or processes, or that need
 their own harness.
 
+**In v0.1.0, nothing runs from this directory yet.** The suites in the table below
+currently live inside the crates that own them — `services/*/tests/`,
+`apps/api/tests/`, and `packages/config/tests/` (for example
+`services/crawler/tests/safety_gate.rs`, `services/indexer/tests/parity.rs`,
+`services/quality/tests/golden.rs`, `apps/api/tests/smoke.rs`). Each subdirectory here
+documents the suite that will move in once it needs its own harness or spans processes.
+
 | Directory | Kind | What runs | Needs |
 | --------- | ---- | --------- | ----- |
 | [`unit/`](./unit/) | cross-crate unit | golden-file tests for URL normalisation, tokenisation, query parsing, ranking maths | nothing |

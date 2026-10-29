@@ -10,6 +10,11 @@ deployment of its own.
 | Search API | [`api/`](./api/) | Rust / axum binary | Yes | Serves `/api/v1/*`, the only public machine surface |
 | Admin console | [`admin/`](./admin/) | Static assets behind auth | **No** | Operations dashboard. Never internet-exposed |
 
+**In v0.1.0, only [`api/`](./api/) is a running artifact** — the search API and its
+server-rendered HTML SERP. [`web/`](./web/) and [`admin/`](./admin/) are design-only for
+now: their READMEs describe the intended design, and the table above states the target
+shape, not what ships today. See the [README status table](../README.md#status).
+
 ## Rules
 
 1. `apps/web` and `apps/admin` are static bundles. They hold no server-side session, no

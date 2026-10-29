@@ -118,10 +118,10 @@ reason.
 | Phase | State |
 | ----- | ----- |
 | Phase 0 — Architecture | **done (v0.1.0)** |
-| Phase 1 — Search prototype | **partial** — query processor, both index readers, BM25F ranker, search API, server-rendered SERP, and CI quality gates shipped; spell correction/expansion and the `apps/web` SPA are not in v0.1 |
-| Phase 2 — Crawler | **done (v0.1.0)** — frontier, robots, SSRF safety gate, downloader caps, parser, and politeness, all test-gated against the fixture origin |
+| Phase 1 — Search prototype | **partial** — query processor, both index readers, BM25F ranker, search API, server-rendered SERP, and CI quality gates shipped (latency and NDCG measured on the seeded fixture corpus); spell correction/expansion and the `apps/web` SPA are not in v0.1 |
+| Phase 2 — Crawler | **partial** — frontier, robots, SSRF safety gate, downloader caps, parser, and politeness all shipped, test-gated against the fixture origin; the exit criteria's small live-sample robots check is operational and not evidenced in the repository |
 | Phase 3 — Real search engine | **partial** — full operator set, near-duplicate fingerprints, freshness, suggestions, and duplicate/spam quality gates shipped; link-graph authority is deliberately post-v0.1 and the corpus is v0.1-scale small |
-| Phase 4 — Privacy hardening | **partial** — GPC, no-store, retention jobs, and production config checks shipped with tests; external review and a production exercise of the privacy model are still open |
+| Phase 4 — Privacy hardening | **partial** — GPC, no-store, retention jobs, and production config checks shipped with tests; external review and a production exercise are still open, and no production deployment is claimed in v0.1 |
 | Phase 5 — AI (Astra) | **partial** — the optional answer layer shipped fail-closed behind a kill switch; v0.1 citation verification is sentence-level and content-blind (documented in [docs/ai/astra.md](./docs/ai/astra.md)) |
 | Phase 6 — Scale | **planned** — sharding, multi-region, and DR drills have exit criteria in [ROADMAP.md](./ROADMAP.md) and are future work |
 

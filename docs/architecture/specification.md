@@ -731,27 +731,27 @@ is measured against a target rather than admired in the abstract.
 
 | ADR | Decision | Status |
 | --- | -------- | ------ |
-| 0001 | Modular monolith with worker processes | Proposed |
-| [0002](../adr/0003-tantivy-index.md) | Tantivy behind a replaceable trait | Proposed |
-| [0003](../adr/0001-rust-language.md) | Rust as the primary language | Proposed |
-| [0004](../adr/0005-postgres-operational.md) | PostgreSQL as the operational database | Proposed |
-| [0005](../adr/0008-no-query-logging.md) | No query persistence; salted-prefix rate limiting | Proposed |
-| [0006](../adr/0007-separate-planes.md) | axum/tower; separate admin surface | Proposed |
-| [0007](../adr/0017-sandboxed-html-parsing.md) | DOM parsing with hard limits | Proposed |
-| [0008](../crawler/frontier.md) | Frontier in Postgres with `SKIP LOCKED` | Proposed |
-| 0009 | Vite + React, prerendered static routes | Proposed |
-| [0010](../adr/0013-ranking-pipeline.md) | Feature-based, versioned, explainable ranking | Proposed |
-| 0011 | Single repo, Cargo + pnpm workspaces | Proposed |
-| [0012](../adr/0010-crawler-architecture.md) | Layered SSRF defence, IP-authoritative | Proposed |
-| [0013](../search/query-parsing.md) | v0.1 operator set and grammar | Proposed |
-| [0014](../adr/0019-telemetry-opentelemetry.md) | Bounded cardinality, shape-only logs | Proposed |
-| [0015](../ai/astra.md) | Astra optional, isolated, grounded | Proposed |
-| [0016](../indexing/pipeline.md) | Extract text, never store raw HTML | Proposed |
-| 0017 | UUIDv7 identifiers | Proposed |
-| [0018](../adr/0009-kubernetes-deployment.md) | Compose for local, Helm for production | Proposed |
-| [0019](../ai/astra.md) | Fail-closed citation verification | Proposed |
-| [0020](../adr/0010-crawler-architecture.md) | Per-host budgets independent of robots | Proposed |
-| [0021](../security/secure-development.md) | Pinned, scanned, signed, reproducible builds | Proposed |
+| 0001 | Modular monolith with worker processes | Accepted |
+| [0002](../adr/0003-tantivy-index.md) | Tantivy behind a replaceable trait | Accepted |
+| [0003](../adr/0001-rust-language.md) | Rust as the primary language | Accepted |
+| [0004](../adr/0005-postgres-operational.md) | PostgreSQL as the operational database | Accepted |
+| [0005](../adr/0008-no-query-logging.md) | No query persistence; salted-prefix rate limiting | Accepted |
+| [0006](../adr/0007-separate-planes.md) | axum/tower; separate admin surface | Accepted |
+| [0007](../adr/0017-sandboxed-html-parsing.md) | DOM parsing with hard limits | Accepted |
+| [0008](../crawler/frontier.md) | Frontier in Postgres with `SKIP LOCKED` | Accepted |
+| 0009 | Vite + React, prerendered static routes | Accepted |
+| [0010](../adr/0013-ranking-pipeline.md) | Feature-based, versioned, explainable ranking | Accepted |
+| 0011 | Single repo, Cargo + pnpm workspaces | Accepted |
+| [0012](../adr/0010-crawler-architecture.md) | Layered SSRF defence, IP-authoritative | Accepted |
+| [0013](../search/query-parsing.md) | v0.1 operator set and grammar | Accepted |
+| [0014](../adr/0019-telemetry-opentelemetry.md) | Bounded cardinality, shape-only logs | Accepted |
+| [0015](../ai/astra.md) | Astra optional, isolated, grounded | Accepted |
+| [0016](../indexing/pipeline.md) | Extract text, never store raw HTML | Accepted |
+| 0017 | UUIDv7 identifiers | Accepted |
+| [0018](../adr/0009-kubernetes-deployment.md) | Compose for local, Helm for production | Accepted |
+| [0019](../ai/astra.md) | Fail-closed citation verification | Accepted |
+| [0020](../adr/0010-crawler-architecture.md) | Per-host budgets independent of robots | Accepted |
+| [0021](../security/secure-development.md) | Pinned, scanned, signed, reproducible builds | Accepted |
 
 ---
 

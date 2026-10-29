@@ -22,7 +22,7 @@ stay as written.
 | Data model (ERD, retention classes, no-user-data guarantee) | done |
 | Threat model with residual risks | done |
 | Privacy model and data inventory | done |
-| Technology decisions (ADRs 0001–0021) | proposed |
+| Technology decisions (ADRs 0001–0021) | accepted |
 | Query language grammar | done |
 | Ranking design with weights | done |
 | API contract and error taxonomy | done |
